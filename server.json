@@ -1,0 +1,14 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "deep_search",
+  "description": "Deep Search MCP Server V9.15 - search_engine (Go CLI multi-source aggregate + ranking_meta learned sort) + Scrapling web fetch (L0/L1/L2 + PDF dump branch) + module-only architecture (no sub-processes)",
+  "version": "9.15",
+  "commands": [
+    {
+      "name": "deep_search",
+      "command": "python",
+      "args": ["-m", "deep_search.server"],
+      "cwd": "/absolute/path/to/parent-of-deep_search"
+    }
+  ]
+}
