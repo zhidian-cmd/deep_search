@@ -1,0 +1,28 @@
+# Deep Search MCP 运行时依赖
+#
+# 安装（两步，缺一不可）：
+#     pip install -r requirements.txt
+#     scrapling install          # 下载浏览器内核，L2 隐身抓取要用
+#
+# 平台限制：metasearch_cli_windows_amd64.exe 是 Windows x64 的 Go 二进制（仓库自带），
+# 所以整个项目只在 Windows 上可运行。
+
+# MCP 框架（stdio 服务端）
+mcp>=1.8.0
+
+# 网页抓取。**必须带 [fetchers] extra** —— 基础版只有 lxml / orjson / cssselect
+# 这类解析依赖，不含抓取引擎。三级降级链的两级都靠 extra 里的包：
+#     L1 AsyncFetcher     需要 curl_cffi
+#     L2 StealthyFetcher  需要 playwright + patchright + browserforge
+scrapling[fetchers]
+
+# L0 直抓用的异步 HTTP 客户端
+httpx
+
+# 正文提取（HTML → markdown）
+trafilatura
+
+# PDF 元数据读取（只取标题与页数，V9.13 起不解析正文）。
+# 它只服务 pdf_sources 清单里的一格信息 —— 但扫描件/标准类 PDF 的可读标题几乎
+# 全靠它（元数据 title 或首页文本），实测值得留。
+pymupdf

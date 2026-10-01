@@ -1,0 +1,38 @@
+# 密钥
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 运行产物
+temp/
+*.log
+
+# Go CLI 二进制（**/ 必须带：路径锚定在 .gitignore 所在目录）
+**/search_engine/bin/*.exe
+
+# 发布包
+*.zip
+
+# 内部工作产物
+.workbuddy/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 临时 / 备份
+*.bak
+*.tmp
