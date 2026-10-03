@@ -6,9 +6,15 @@
   L2 StealthyFetcher（第 3 级，隐身浏览器渲染 + 滚动 + Cookie）：不花钱，兜底，
      且只有它能处理需要滚动/等待/交互的页面
 
-PDF 支链（L0 内）：判魔数 → 原文件落盘 temp/pdf → 记 pdf_sources 清单 → 出链。
-不解析正文、不进正文池（真 PDF 三级链都读不出正文，解析文本过 content_score 时
-噪声与正文同分，且一条 29 万字会挤光整批 max_total_chars）。
+PDF 支链（L0 内）：判魔数 → 原文件落盘 temp/pdf → 抽正文关键片段（限额摘要，
+随 pdf_sources 交付内联进响应）→ 记 pdf_sources 清单 → 出链。
+PDF 不进正文池（真 PDF 三级链都读不出正文，解析文本过 content_score 时
+噪声与正文同分，且一条 29 万字会挤光整批 max_total_chars），但摘要必须给
+——原"正文不返回"设计实测导致调用方整批漏掉标准/文献级来源。
+
+PDF 缓存（V10.3）：按 URL hash 跨轮复用。命中（同 URL + 同字节数）不重新
+下载、不重写文件，元数据与摘要直接复用；temp/pdf 只写不删，缓存索引在
+temp/pdf/_pdf_index.json。
 
 L2 跳过判据：硬阻断 / 二进制解码失败不升级（见 _skip_l2_reason）。
 超时单位注意：AsyncFetcher.get 传**秒**；StealthyFetcher.async_fetch 传**毫秒**。
@@ -20,6 +26,7 @@ L2 跳过判据：硬阻断 / 二进制解码失败不升级（见 _skip_l2_reas
 import asyncio
 import hashlib
 import html as _html_lib
+import json
 import logging
 import os
 import re
@@ -37,6 +44,7 @@ from deep_search.config import PDF_DIR, DeepSearchConfig
 from deep_search import helpers
 from deep_search import filters
 from deep_search import filters_learn
+from deep_search import ledger
 
 # L0 httpx 直抓超时（秒）：非 WAF 普通站 2s 内出响应，慢站也不误杀，
 # 仍远小于 L1/L2 各自的 scrapling_timeout，保证升级链不被拖慢。
@@ -66,6 +74,9 @@ _HTTPX_HEADERS = {
 _GONE_STATUSES = frozenset({404, 410})
 _HARD_BLOCK_STATUSES = frozenset({403, 451})
 _PDF_MAGIC = b"%PDF-"
+# PDF 缓存索引（temp/pdf/_pdf_index.json）：url_hash → {path,bytes,pages,title,digest,added}。
+# 只存元数据与摘要，不存正文——正文需要时读 path 指向的原文件。
+_PDF_INDEX_NAME = "_pdf_index.json"
 # PDF 支链的"已终结"哨兵：_fetch_chain 用它告诉 _worker —— 本条是 PDF，文件已
 # 落盘、清单已记。⚠️ 不能用 None 代替：None 会走失败分支记一次 fetch_ok=False，
 # 把该域名的自适应降权学习带偏（PDF 落盘恰恰是成功）。
@@ -198,9 +209,13 @@ class ScraplingManager:
         self._stealthy_session = None
         self._stealthy_lock = asyncio.Lock()
         self._stealthy_broken = False   # 起不来就整批退回旧的逐条模式，不反复重试
-        # PDF 支链留档清单：[{url, path, bytes, pages, title}]，由 L0 追加，
-        # fetch_all 每次开跑清空。这些条目不进 fetch_all 的返回值。
+        # PDF 支链留档清单：[{url, path, bytes, pages, title, digest, reused}]，
+        # 由 L0 追加，fetch_all 每次开跑清空。这些条目不进 fetch_all 的返回值。
         self.pdf_sources: List[Dict] = []
+        # PDF 落盘缓存索引（fetch_all 开跑时从磁盘加载，落盘后写回）。
+        self._pdf_index: Dict[str, Dict] = {}
+        # 本轮 query（fetch_all 传入）：PDF 摘要打分时叠加 query 相关词。
+        self._current_query: str = ""
         try:
             from scrapling.fetchers import AsyncFetcher, StealthyFetcher, AsyncStealthySession
             self._async_fetcher = AsyncFetcher
@@ -217,6 +232,7 @@ class ScraplingManager:
         fetch_count: int,
         budget: Optional[float] = None,
         interactions: Optional[List[Dict]] = None,
+        query: str = "",
     ) -> List[Dict]:
         """固定条数并行抓取：返回 [{url, text, score}]，按 score 降序。
 
@@ -225,12 +241,16 @@ class ScraplingManager:
         - 过滤：score >= content_threshold 保留，否则丢弃。
         - budget：整批全局预算（秒），到点取消未完成条目；单条另有
           fetch_timeout_per_url 硬熔断，到点单独放弃不影响其余。
+        - query：本轮检索词，仅供 PDF 摘要打分叠加关键词，不参与抓取。
         - ⚠️ PDF 不在返回值里：那类条目走 L0 支链（落盘 + 记清单），
           调用方读 `self.pdf_sources` 取。
         """
         # 每轮一份干净的 PDF 清单：必须放在最前（早于任何 return），否则 urls
         # 为空时会把上一轮的清单留给调用方 —— 那是幽灵结果。
         self.pdf_sources = []
+        self._current_query = query or ""
+        # 缓存索引整批加载一次（逐条读盘是 29 次 IO）；落盘时写回。
+        self._pdf_index = self._pdf_index_load() if self.config.pdf_cache_enabled else {}
         if not urls:
             return []
 
@@ -268,6 +288,15 @@ class ScraplingManager:
         host = helpers.host_of(url)
         if not host or dead_hosts.get(host):
             return None, None, None
+        # PDF 跨轮缓存：URL hash 命中且文件在盘 → 不下载直接复用（V10.3）。
+        # 返回 200 只是占位（_PDF_DONE 短路了降级链，status 无人消费）。
+        cached = self._pdf_cache_hit(url)
+        if cached is not None:
+            self.pdf_sources.append(cached)
+            self.logger.info(
+                "PDF cache hit, skip download: %s -> %s", url, cached["path"]
+            )
+            return _PDF_DONE, None, 200
         client = httpx.AsyncClient(
             follow_redirects=True, timeout=_HTTPX_TIMEOUT, headers=_HTTPX_HEADERS,
         )
@@ -321,17 +350,19 @@ class ScraplingManager:
         return None, None, resp.status_code
 
     def _pdf_meta(self, data: bytes, url: str) -> Dict:
-        """读 PDF 的标题与页数（只为清单服务，不抽正文）。
+        """读 PDF 的标题、页数与限额摘要（清单三件套，仍不进正文池）。
 
         PDF 不进正文池的三条依据：无 DOM、页眉页脚周期重复，content_score 眼里
         不是"低质"是"字多"（29 万字仍拿 0.88）；截断只能字符硬切；一条 29 万字
         是整批 60000 额度的 5 倍，会把其余来源全挤出去。
+        但摘要必须抽（V10.3）：正文关键片段随 pdf_sources 内联进响应，否则
+        标准/文献级来源整批漏看。
 
         标题优先级：PDF 元数据 title（先过泛词关）→ 第一页文本开头 → URL 末段
         （国内标准类 PDF 元数据标题经常为空，必须抽第一页兜底）。
         懒导入 pymupdf：绝大多数 query 遇不到 PDF，不白付 import 成本。
         """
-        title, pages = "", 0
+        title, pages, digest = "", 0, ""
         import pymupdf              # 正式包名（`fitz` 别名已弃用告警）
         try:
             with pymupdf.open(stream=data, filetype="pdf") as doc:
@@ -341,12 +372,120 @@ class ScraplingManager:
                     title = raw
                 if not title and pages:
                     title = _first_title_lines(doc[0].get_text() or "")
+                # 限额摘要：前 N 页文本一次性抽出，打分在 _pdf_digest 里做。
+                if self.config.pdf_digest_enabled and pages:
+                    n = min(pages, max(1, self.config.pdf_digest_pages))
+                    page_texts = []
+                    for i in range(n):
+                        try:
+                            page_texts.append(doc[i].get_text() or "")
+                        except Exception:
+                            continue
+                    digest = self._pdf_digest(" ".join(page_texts))
         except Exception as e:
             self.logger.warning("PDF meta failed for %s: %s", url, e)
         if not title:
             # URL 末段兜底；端点式 URL 拿不到名字只能空着，页数/字节数仍给得出。
             title = unquote(urlparse(url).path.rsplit("/", 1)[-1] or "")
-        return {"title": title.strip(), "pages": pages}
+        return {"title": title.strip(), "pages": pages, "digest": digest}
+
+    # 摘要打分关键词（通用高价值段：摘要/结论/工艺/参数…；query 词运行时叠加）。
+    _DIGEST_KW = (
+        "摘要", "abstract", "结论", "conclusion", "小结",
+        "工艺", "流程", "参数", "条件", "步骤",
+        "标准", "规程", "指标", "要求",
+        "℃", "%", "温度", "时间", "水分", "范围", "GB",
+    )
+
+    def _pdf_digest(self, text: str) -> str:
+        """PDF 正文 → 限额摘要：开头 300 字（标题/摘要区）+ 打分最高的窗口片段。
+
+        打分 = 关键词命中（通用表 + 本轮 query 词）；无命中窗口时兜底取正文
+        开头。窗口 300 字、步长 60、额度 pdf_digest_max_per_pdf 字符——标准
+        原文 29 万字也就抽出 1200 字，防"一份 PDF 吃光响应"。
+        """
+        cfg = self.config
+        t = re.sub(r"\s+", " ", text or "").strip()
+        if len(t) < 50:
+            return ""
+        kws = list(self._DIGEST_KW)
+        for w in re.split(r"[\s,，、;；]+", self._current_query or ""):
+            if len(w) >= 2 and w not in kws:
+                kws.append(w)
+
+        head = t[:300]
+        budget = max(cfg.pdf_digest_max_per_pdf - len(head) - 100, 200)
+        win = max(cfg.pdf_digest_win, 100)
+        step = max(win // 5, 60)
+        spans = range(0, max(len(t) - win, 0) + 1, win - step) or [0]
+
+        def _score(w: str) -> int:
+            s = 0
+            for kw in kws:
+                c = w.count(kw)
+                if c:
+                    s += 2 + min(c, 5)
+            return s
+
+        scored = sorted(((_score(t[i:i + win]), i) for i in spans), key=lambda x: -x[0])
+        picked: List[int] = []
+        used = 0
+        for s, i in scored:
+            if s <= 2:                      # 完全无关键词命中的窗口不要
+                continue
+            if used + win > budget:
+                break
+            picked.append(i)
+            used += win
+        if not picked:                      # 兜底：宁给开头也不给空
+            picked, used = [0], min(400, len(t))
+        picked.sort()
+        frag = "……".join(t[i:i + win] for i in picked)
+        return f"【开头】{head}\n【关键片段】{frag}"
+
+    # ---------- PDF 落盘缓存（按 URL hash 跨轮复用，V10.3） ----------
+
+    def _pdf_index_path(self) -> str:
+        return os.path.join(PDF_DIR, _PDF_INDEX_NAME)
+
+    def _pdf_index_load(self) -> Dict[str, Dict]:
+        """缓存索引 → dict；文件缺失/损坏一律当空表（fail-open，只影响复用率）。"""
+        try:
+            with open(self._pdf_index_path(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _pdf_index_save(self) -> None:
+        try:
+            os.makedirs(PDF_DIR, exist_ok=True)
+            with open(self._pdf_index_path(), "w", encoding="utf-8") as f:
+                json.dump(self._pdf_index, f, ensure_ascii=False)
+        except Exception as e:
+            self.logger.warning("PDF index save failed: %s", e)
+
+    @staticmethod
+    def _pdf_key(url: str) -> str:
+        """URL → 缓存键：规范化（剥 scheme/追踪参数，与账本 L1 同口径）后 sha1。"""
+        return hashlib.sha1(ledger.norm_url(url).encode("utf-8")).hexdigest()
+
+    def _pdf_cache_hit(self, url: str) -> Optional[Dict]:
+        """缓存命中返回清单条目（带 reused=True）；未命中/文件丢失返回 None。"""
+        if not self.config.pdf_cache_enabled:
+            return None
+        key = self._pdf_key(url)
+        rec = self._pdf_index.get(key)
+        if not rec:
+            return None
+        path = rec.get("path") or ""
+        if not path or not os.path.exists(path):
+            return None
+        entry = dict(rec)
+        entry["url"] = url
+        entry["reused"] = True
+        entry["key"] = key
+        return entry
 
     def _dump_pdf(self, data: bytes, url: str) -> Optional[Dict]:
         """PDF 原文件落盘到 PDF_DIR，返回清单条目；任何失败返回 None。
@@ -355,6 +494,10 @@ class ScraplingManager:
         文件名 = 解析出的标题 + `_{sha1(url)[:8]}.pdf`：同 URL 幂等、撞名不互覆盖；
         标题截 60 字（Windows 路径长度上限）、末尾自带 `.pdf` 要剥掉。
         ⚠️ 本目录只写不删，没有自动回收（长期部署要自己按量裁）。
+
+        V10.3 缓存：规范化 URL hash 命中且同字节数 → 跳过写盘，元数据与摘要
+        直接复用（mtime 不再被覆盖，"本轮新增"可判）；字节数不同视为内容已变，
+        重写并刷新索引。
         """
         meta = self._pdf_meta(data, url)            # 先解析：文件名要用它
         stem = helpers.safe_filename(meta.get("title") or "", 60)
@@ -365,13 +508,45 @@ class ScraplingManager:
         try:
             os.makedirs(PDF_DIR, exist_ok=True)
             path = os.path.join(PDF_DIR, name)
-            with open(path, "wb") as f:
-                f.write(data)
         except Exception as e:
             self.logger.warning("PDF dump failed for %s: %s", url, e)
             return None
-        entry = {"url": url, "path": path, "bytes": len(data)}
+
+        reused = False
+        if self.config.pdf_cache_enabled:
+            key = self._pdf_key(url)
+            rec = self._pdf_index.get(key)
+            if rec and rec.get("path") == path and os.path.exists(path):
+                try:
+                    reused = os.path.getsize(path) == len(data)
+                except OSError:
+                    reused = False
+        if not reused:
+            try:
+                with open(path, "wb") as f:
+                    f.write(data)
+            except Exception as e:
+                self.logger.warning("PDF dump failed for %s: %s", url, e)
+                return None
+
+        entry = {
+            "url": url, "path": path, "bytes": len(data),
+            "reused": reused, "key": self._pdf_key(url),
+        }
         entry.update(meta)
+        # 索引写回：元数据 + 摘要（不含正文——需要时读 path 指向的原文件）。
+        if self.config.pdf_cache_enabled:
+            key = entry["key"]
+            prev = self._pdf_index.get(key) or {}
+            self._pdf_index[key] = {
+                k: entry[k] for k in ("path", "bytes", "pages", "title", "digest")
+                if k in entry
+            }
+            # 复用保留首次入库时间；新落盘写当前时间。
+            self._pdf_index[key]["added"] = (
+                prev.get("added") if reused else time.strftime("%Y-%m-%d %H:%M")
+            )
+            self._pdf_index_save()
         return entry
 
     async def _close_client(self, client) -> None:

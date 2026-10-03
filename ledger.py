@@ -21,6 +21,7 @@ L2（标题/摘要近似）评估后不做：URL 归一等不掉的同站换 URL
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import string
 from dataclasses import dataclass, field
@@ -130,6 +131,80 @@ def containment(a: set, b: set) -> float:
     return inter / min(len(a), len(b)) if inter else 0.0
 
 
+# ========== L4 判据：simhash 正文指纹（V10.3） ==========
+
+# 参与指纹的正文长度（字符，先去空白）。固定常量不经 config：账本里存过的
+# 指纹（Entry.sh）与后续比对必须同一口径，配置可变会新旧错配。
+_SH_SAMPLE = 2000
+_SIMHASH_BITS = 64
+
+
+def simhash64(text: str) -> int:
+    """正文 → 64-bit simhash 指纹（字符 3-gram 为特征，md5 截 64 位，频次加权）。
+
+    与 3-gram 包含度互补：包含度取样在正文前缀（512 字符），镜像站改写
+    前缀/导语就判不出；simhash 看全段词汇分布，前缀改写不敏感。
+    返回 0 = 无有效指纹（调用方必须把 0 当"没有指纹"处理，不得参与比对）。
+    """
+    t = "".join((text or "").split())[:_SH_SAMPLE]
+    if len(t) < 3:
+        return 0
+    counts: Dict[str, int] = {}
+    for i in range(len(t) - 2):
+        g = t[i:i + 3]
+        counts[g] = counts.get(g, 0) + 1
+    v = [0] * _SIMHASH_BITS
+    for g, w in counts.items():
+        h = int.from_bytes(hashlib.md5(g.encode("utf-8")).digest()[:8], "big")
+        for b in range(_SIMHASH_BITS):
+            v[b] += w if (h >> b) & 1 else -w
+    out = 0
+    for b in range(_SIMHASH_BITS):
+        if v[b] > 0:
+            out |= 1 << b
+    return out
+
+
+def hamming(a: int, b: int) -> int:
+    """两个指纹的汉明距离（0 = 全同）。"""
+    return bin((a ^ b) & ((1 << _SIMHASH_BITS) - 1)).count("1")
+
+
+# ========== L5 判据：多窗口包含度（V10.3） ==========
+# 实测教训：单窗口（前 512 字）包含度对"镜像站截掉原文开头再挂自己导语"全盲；
+# simhash 对这类也不敏感（截断错位扰动全部 3-gram，64-bit 汉明距离拉到 20+）。
+# 镜像的本质是**内容子串包含**——把比对改成多窗口取最大包含度，只要镜像保留
+# 了原文任一整段窗口，就必然有一对窗口 containment 冲上阈值。
+_GRAM_SLICE = 512
+_GRAM_SLICES = 4      # 前 4 × 512 = 2048 字符，4 个不滑窗的切片
+
+
+def grams_slices(text: str) -> list:
+    """正文 → 多个切片的 3-gram 集合列表（供 containment_multi 比对）。"""
+    t = "".join((text or "").split())
+    out = []
+    for k in range(_GRAM_SLICES):
+        seg = t[k * _GRAM_SLICE:(k + 1) * _GRAM_SLICE]
+        if seg:
+            out.append(grams(seg))
+    return out or [set()]
+
+
+def containment_multi(a_list: list, b_list: list) -> float:
+    """两组切片的**最大**包含度：任一对窗口重合即判出（镜像子串包含）。"""
+    best = 0.0
+    for ga in a_list:
+        if not ga:
+            continue
+        for gb in b_list:
+            s = containment(ga, gb)
+            if s > best:
+                best = s
+                if best >= 1.0:
+                    break
+    return best
+
+
 # ========== 账本 ==========
 
 # 交付正文的内存预算（字符）。约 60KB/轮（15 条 × 4KB）→ 25 轮。超了从最老那轮
@@ -144,6 +219,7 @@ class Entry:
     nurl: str                   # norm_url 后的比对形
     round_no: int               # 首次交付发生在第几轮
     body: str = ""              # 仅交付过的网页有；PDF 留空（原文件在 temp/pdf）
+    sh: int = 0                 # 正文的 simhash 指纹（0 = 无；服务跨轮 L4 比对）
 
 
 @dataclass
@@ -176,29 +252,44 @@ def filter_candidates(urls: List[str]) -> Tuple[List[str], List[Dict]]:
     return kept, dropped
 
 
-def filter_bodies(items: List[Dict], limit: int, threshold: float) -> Tuple[List[Dict], List[Dict]]:
-    """L3：抓回的正文与**账本里交付过的正文**比包含度，超阈值即剔（跨站转载）。
+def filter_bodies(items: List[Dict], limit: int, threshold: float,
+                  sh_threshold: int = 0) -> Tuple[List[Dict], List[Dict]]:
+    """L3+L4+L5：抓回的正文与**账本里交付过的正文**比相似度，超阈值即剔。
 
-    只与正文比（账本里没正文的条目只剩 L1 那层记忆）。
-    判据与阈值和同批去重同一套，同一份数据不能有两个答案。
+    L3 = 单窗口 3-gram 包含度（> threshold，前缀同文）；L4 = simhash 汉明距离
+    （≤ sh_threshold，整篇复用）；L5 = 多窗口最大包含度（镜像子串包含——前缀
+    被改写的转载）。三者 OR 组合；sh_threshold=0 时 L4 关闭。
+    判据与同批去重同一套，同一份数据不能有两个答案。
     """
-    bodies = [(e, grams(e.body[:limit])) for e in _BY_NURL.values() if e.body]
-    bodies = [(e, g) for e, g in bodies if g]
+    bodies = [(e, grams(e.body[:limit]), grams_slices(e.body), e.sh)
+              for e in _BY_NURL.values() if e.body]
+    bodies = [t for t in bodies if t[1] or t[2] != [set()] or t[3]]
     if not bodies:
         return list(items), []
     kept: List[Dict] = []
     dropped: List[Dict] = []
     for it in items:
-        g = grams(filters.strip_source_header(it.get("text") or "")[:limit])
+        raw = filters.strip_source_header(it.get("text") or "")
+        g = grams(raw[:limit])
+        gs = grams_slices(raw)
+        sh = simhash64(raw) if sh_threshold > 0 else 0
         hit: Optional[Entry] = None
         best = 0.0
-        for e, eg in bodies:
-            s = containment(g, eg)
+        how = ""
+        for e, eg, egs, esh in bodies:
+            s = containment(g, eg) if (g and eg) else 0.0
+            ms = containment_multi(gs, egs) if gs != [set()] and egs != [set()] else 0.0
+            if ms > s:
+                s = ms
             if s > best:
-                hit, best = e, s
-        if hit is not None and best > threshold:
+                hit, best, how = e, s, "gram"
+            if (sh and esh and hit is None
+                    and hamming(sh, esh) <= sh_threshold):
+                hit, best, how = e, 1.0, f"simhash(d={hamming(sh, esh)})"
+        if hit is not None and (best > threshold or how.startswith("simhash")):
             dropped.append({
-                "url": it.get("url") or "", "sim": round(best, 3), "dup_of": hit.url,
+                "url": it.get("url") or "", "sim": round(best, 3),
+                "dup_of": hit.url, "how": how,
             })
         else:
             kept.append(it)
@@ -234,6 +325,11 @@ def _put(url: str, body: str, rnd: _Round) -> None:
         # 同一 URL 拿到更长的正文（理论上不会再出现：它下轮会被 L1 剔掉）
         rnd.body_chars += len(body) - len(e.body)
         e.body = body
+        # 指纹随正文更新（strip_source_header 与 L3 比对口径一致：元数据不参与）
+        try:
+            e.sh = simhash64(filters.strip_source_header(body))
+        except Exception:
+            e.sh = 0
 
 
 def _evict_bodies() -> None:

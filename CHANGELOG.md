@@ -3,6 +3,14 @@
 > 本文件已精炼：每个版本只保留结论与关键数字，完整原文备份在 `temp/backup_md_20260925/CHANGELOG.md`。
 > 声明位随版本走，历史注记一律不动（V8.16 立的原则）。
 
+## V10.3（2026-10-03 PDF 摘要内联 + 落盘缓存 + simhash/多窗口去重）
+
+- **PDF 摘要内联（大修）**：命中 PDF 落盘时 server 端用 pymupdf 抽正文（前 12 页），按关键词打分窗口（摘要/结论/工艺/参数 + 本轮 query 词）取关键片段，单份 ≤1200 字、总额 ≤6000 字，追加在响应末尾「PDF 附件摘要」节；归档「PDF 附件」节逐份带完整摘要。动机：V10.2 只把计数放出返回头，消费纪律写在 SKILL.md——**MCP 直调时 SKILL.md 不会加载**，粮油加工学作业 8 轮检索 `pdf_dumps>0` 全部被漏看（含 DB4415 米粉干标准、粮食加工期刊论文），agent 第一次给答案缺了关键内容。摘要只是局部：响应与归档都标注"引用细节前按 path 读原文"。
+- **PDF 落盘缓存**：`temp/pdf/_pdf_index.json` 按 sha1(norm_url)（与账本 L1 同口径）索引 {path,bytes,pages,title,digest,added}。同 URL 再命中且同字节数 → 不下载（L0 前短路）、不写盘（mtime 不再被覆盖，"本轮新增"可判），元数据与摘要直接复用；返回头标注 `新增A/复用B`。8 轮作业检索实测同一批 10 份 PDF 被重复下载 8 次。
+- **simhash + 多窗口包含度（去重 L4/L5）**：`ledger.simhash64()`（字符 3-gram、md5 截 64 位、频次加权）兜"整篇复用但重排"——gram 类判据对重排全盲（实测洗稿场景 hamming=24 但 containment=0.94 反例仅因词汇保留，重排更狠时 gram 归零）；`ledger.grams_slices()/containment_multi()`（4×512 字符切片取最大包含度）净"截掉原文开头的镜像"——单窗口 512 对砍前 200 字再挂导语的镜像 hamming=28 全盲，多窗口 containment=1.00 判出。三判据（单窗 gram / 多窗 gram / simhash）OR 组合，同批去重与跨轮 filter_bodies 用同一份实现。**回归**：真实归档 91 对（同主题不同文章）0 误杀；既有 3-gram 行为是窗口 0 的子集，测试全兼容。
+- 接线：`config.py` 新增 pdf_digest_* / pdf_cache_enabled / simhash_* 配置；`web_fetch.py` `_pdf_meta` 顺带抽摘要（doc 已打开零额外成本）、`_httpx_first` L0 前查缓存、`_dump_pdf` 缓存写回；`skill.py` 传 query 给 fetch_all、`_render_pdf_digest_section` 限额渲染、归档 PDF 节带摘要；`server.py` 返回头改 `pdf_dumps=N(新增A/复用B…；关键片段摘要已内联文末…)`（"附件节与原文路径见归档"子串保留，test_tool_header 兼容）。
+- ⚠️ 已在跑的 MCP 宿主需重连才拿到新行为；缓存索引只写不清理，长期部署随 temp/pdf 一起按量裁。全量离线回归 10 套 232 项断言 PASS（test_ledger/test_pdf_branch 桩同步新签名）。
+
 ## V10.2（2026-10-01 PDF 附件计数出返回头）
 
 - 新增 `server.py` 返回头 `pdf_dumps=N(正文未返回；附件节与原文路径见归档)`：落盘支链的 PDF 不进正文、不在 Sources、不计入 fetched_count——**返回字符串里没有任何线索能证明"有附件存在"**，agent 只能靠翻归档才能发现。渲染逻辑从工具函数抽成模块级 `_render_result()`（原本没有测试入口）。

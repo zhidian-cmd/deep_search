@@ -206,6 +206,7 @@ class DeepSearchSkill:
                 fetch_count,
                 budget=self.config.scrape_budget or None,
                 interactions=interactions or None,
+                query=query,
             )
         except Exception as e:
             self.logger.warning(f"Scrapling fetch_all failed: {e}")
@@ -215,12 +216,20 @@ class DeepSearchSkill:
 
         # 3.4.0 PDF 支链留档：这些条目不在 fetched 里（L0 判魔数即落盘出链）。
         # ⚠️ 清单必须透传 metadata.pdf_sources，否则文件躺在 temp/pdf 无人知晓。
+        # V10.3：条目自带 digest（server 端抽取的限额摘要），由 _render_pdf_
+        # digest_section 内联进响应——消费纪律不再依赖 SKILL.md 被加载。
         pdf_sources = list(getattr(self.scrapling, "pdf_sources", None) or [])
         if pdf_sources:
             result["metadata"]["pdf_sources"] = pdf_sources
+            pdf_new = sum(1 for p in pdf_sources if not p.get("reused"))
+            result["metadata"]["pdf_new"] = pdf_new
+            result["metadata"]["pdf_reused"] = len(pdf_sources) - pdf_new
+            section = self._render_pdf_digest_section(pdf_sources)
+            if section:
+                result["metadata"]["_pdf_digest_section"] = section
             self.logger.info(
-                "PDF dumps this run: %d (%s)",
-                len(pdf_sources),
+                "PDF dumps this run: %d (new=%d reused=%d) (%s)",
+                len(pdf_sources), pdf_new, len(pdf_sources) - pdf_new,
                 ", ".join(f"{p.get('title') or p.get('url')}" for p in pdf_sources[:3]),
             )
 
@@ -313,14 +322,17 @@ class DeepSearchSkill:
 
         _lap("learn")
 
-        # 跨轮去重 L3（见 ledger.py）：与前面几轮交付过的正文比包含度，净跨站转载
-        # —— L1 与 CLI 元数据去重都覆盖不到的一类。阈值与同批去重同一套。
+        # 跨轮去重 L3+L4（见 ledger.py）：与前面几轮交付过的正文比包含度或
+        # simhash 汉明距离，净跨站转载——L1 与 CLI 元数据去重都覆盖不到的一类。
+        # 阈值与同批去重同一套。
         cross_before = len(items)
         if cross_before:
             items, cross_dropped = ledger.filter_bodies(
                 items,
                 self.config.semantic_dedup_max_chars,
                 self.config.semantic_dedup_ngram_threshold,
+                sh_threshold=(self.config.simhash_hamming_threshold
+                              if self.config.simhash_enabled else 0),
             )
             if cross_dropped:
                 result["metadata"]["cross_round_dropped"] = cross_dropped
@@ -416,7 +428,7 @@ class DeepSearchSkill:
         n_items = len(items)
         stat: Dict[str, Any] = {
             "before": n_items, "after": n_items, "dropped": 0,
-            "merged": 0, "elapsed": 0.0,
+            "merged": 0, "simhash_merged": 0, "elapsed": 0.0,
         }
 
         def _fail_open() -> List[Dict]:
@@ -432,16 +444,28 @@ class DeepSearchSkill:
         if not any(usable):
             return _fail_open(), stat
         try:
-            # 相似度矩阵：3-gram 包含度，纯标准库，数十条目全对比较 <100ms。
-            # 判据在 ledger.grams / containment —— 跨轮去重（L3）用同一份。
-            gs = [ledger.grams(texts[i]) if usable[i] else set() for i in range(n_items)]
+            # 相似度矩阵：3-gram 包含度（V10.3 起多窗口取最大——窗口 0 与旧
+            # 单窗口完全同口径，严格覆盖；后 3 个窗口净"截掉原文开头的镜像"）。
+            # 判据在 ledger —— 跨轮去重（L3/L5）用同一份。纯标准库，数十条目
+            # 全对比较仍在百毫秒级。
+            texts_full = [filters.strip_source_header(d.get("text") or "") for d in items]
+            gs = [ledger.grams_slices(texts_full[i]) if usable[i] else [set()]
+                  for i in range(n_items)]
             sim: List[List[float]] = [[0.0] * n_items for _ in range(n_items)]
             for i in range(n_items):
-                if not gs[i]:
+                if not gs[i] or gs[i] == [set()]:
                     continue
                 for j in range(i + 1, n_items):
-                    if gs[j]:
-                        sim[i][j] = sim[j][i] = ledger.containment(gs[i], gs[j])
+                    if gs[j] != [set()]:
+                        sim[i][j] = sim[j][i] = ledger.containment_multi(gs[i], gs[j])
+            # simhash 指纹（V10.3）：全段词汇分布，兜"整篇复用（含重排/换字）"
+            # ——前缀改写类由多窗口包含度管，重排类 gram 全盲、simhash 才看得见。
+            # 与包含度 OR 组合，不单独判（独立文章词汇重叠高，单用易误杀）。
+            sh_thr = (self.config.simhash_hamming_threshold
+                      if self.config.simhash_enabled else 0)
+            shs = ([ledger.simhash64(filters.strip_source_header(d.get("text") or ""))
+                    if usable[i] else 0 for i, d in enumerate(items)]
+                   if sh_thr else [0] * n_items)
         except Exception as e:
             self.logger.warning("Similar dedup unavailable, fail-open: %s", e)
             stat["error"] = str(e)[:200]
@@ -463,10 +487,18 @@ class DeepSearchSkill:
             if not usable[i]:
                 continue
             for j in range(i + 1, n):
-                if usable[j] and sim[i][j] > threshold:
-                    ri, rj = _find(i), _find(j)
-                    if ri != rj:
-                        parent[rj] = ri
+                if not usable[j]:
+                    continue
+                gram_hit = sim[i][j] > threshold
+                sh_hit = bool(sh_thr and shs[i] and shs[j]
+                              and ledger.hamming(shs[i], shs[j]) <= sh_thr)
+                if not (gram_hit or sh_hit):
+                    continue
+                ri, rj = _find(i), _find(j)
+                if ri != rj:
+                    parent[rj] = ri
+                    if sh_hit and not gram_hit:
+                        stat["simhash_merged"] += 1
 
         groups: Dict[int, List[int]] = {}
         for i in range(n):
@@ -492,11 +524,47 @@ class DeepSearchSkill:
         stat["merged"] = n_items - len(survivors)      # 只算簇合并
         stat["elapsed"] = round(time.perf_counter() - t0, 2)
         self.logger.info(
-            "Similar dedup: %d -> %d (dropped=%d merged=%d thr=%.2f %.2fs)",
+            "Similar dedup: %d -> %d (dropped=%d merged=%d simhash=%d thr=%.2f %.2fs)",
             n_items, len(kept), stat["dropped"], stat["merged"],
-            threshold, stat["elapsed"],
+            stat["simhash_merged"], threshold, stat["elapsed"],
         )
         return kept, stat
+
+    # ---------- PDF 附件摘要（响应内联，V10.3） ----------
+    def _render_pdf_digest_section(self, pdfs: List[Dict]) -> str:
+        """pdf_sources → 限额摘要文本，追加在响应正文之后。
+
+        每份摘要取条目自带的 digest（_dump_pdf 时抽好）；总额度
+        pdf_digest_max_total 字符，超了按清单顺序截断并标注——归档里每份 PDF
+        仍带完整摘要，需要时读归档。
+        """
+        cap = self.config.pdf_digest_max_total
+        if cap <= 0:
+            return ""
+        reused_n = sum(1 for p in pdfs if p.get("reused"))
+        lines = [
+            f"## PDF 附件摘要（{len(pdfs)} 份落盘：新增 {len(pdfs) - reused_n}"
+            f"、复用缓存 {reused_n}；摘要总额度 {cap} 字）",
+            "全文路径与原始 URL 见归档「PDF 附件」节；⚠️ 摘要只是局部，引用结论前"
+            "必要时按 path 读原文核对。",
+        ]
+        used = 0
+        for p in pdfs:
+            title = str(p.get("title") or "") or "(无标题)"
+            tag = "（本轮复用缓存，未重新下载）" if p.get("reused") else ""
+            d = (p.get("digest") or "").strip()
+            if used >= cap:
+                lines.append(f"\n**{title}**{tag}\n（摘要总额度已用完，未摘取；全文见归档）")
+                continue
+            if not d:
+                lines.append(f"\n**{title}**{tag}\n（无可抽取文本，可能是扫描件）")
+                continue
+            room = cap - used
+            if len(d) > room:
+                d = d[:room] + "……[摘要因总额度截断]"
+            used += len(d)
+            lines.append(f"\n**{title}**{tag}\n{d}")
+        return "\n".join(lines)
 
     async def _call_search_core(self, query: str,
                                 limit: Optional[int] = None) -> Dict:
@@ -680,10 +748,19 @@ class DeepSearchSkill:
                 )
                 n_pages = int(p.get("pages") or 0)
                 pages_s = f" · {n_pages} 页" if n_pages else ""
+                reuse_s = " · 本轮复用缓存" if p.get("reused") else ""
                 pdf_lines.append(f"- **{title}**")
-                pdf_lines.append(f"  - {size_s}{pages_s} · 未纳入正文")
+                pdf_lines.append(f"  - {size_s}{pages_s}{reuse_s} · 未纳入正文")
                 pdf_lines.append(f"  - 本地路径: `{p.get('path') or ''}`")
                 pdf_lines.append(f"  - 原始地址: {p.get('url') or ''}")
+                # 关键片段摘要（V10.3）：归档不吃响应额度，逐份给全。
+                digest = (p.get("digest") or "").strip()
+                if digest:
+                    pdf_lines.append("  - 关键片段（server 端抽取，局部内容，引用前建议读原文核对）:")
+                    for seg in digest.split("\n"):
+                        seg = seg.strip()
+                        if seg:
+                            pdf_lines.append(f"    > {seg}")
             pdf_lines.append("")
 
         # 兜底：搜索摘要降级路径没有来源头，退回列出候选 URL。

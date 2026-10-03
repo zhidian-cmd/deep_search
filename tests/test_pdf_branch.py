@@ -121,8 +121,9 @@ async def main():
         check("落盘的是**原字节**，不是解析后的文本",
               bool(entry) and open(entry["path"], "rb").read() == pdf)
         check("字节数记录正确", bool(entry) and entry["bytes"] == len(pdf))
-        check("字段齐全 url/path/bytes/pages/title",
-              bool(entry) and set(entry) == {"url", "path", "bytes", "pages", "title"},
+        check("字段齐全 url/path/bytes/pages/title（V10.3 起 + digest/key/reused）",
+              bool(entry) and {"url", "path", "bytes", "pages", "title"} <= set(entry)
+              and {"digest", "key", "reused"} <= set(entry),
               repr(sorted(entry)) if entry else "")
         check("元信息随落盘一并进入清单（pages/title）",
               bool(entry) and entry["pages"] == 2 and "GB 4789.17-2024" in entry["title"],

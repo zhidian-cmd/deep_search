@@ -52,7 +52,7 @@ def _stub(sk, cands):
             for u in urls
         ]}
 
-    async def fake_fetch(pending, fetch_count, budget=None, interactions=None):
+    async def fake_fetch(pending, fetch_count, budget=None, interactions=None, query=""):
         out = []
         for u in pending:
             # 正文必须互不相同，否则会被同批内容判重合成一条：默认用 URL 的 sha1 填充。

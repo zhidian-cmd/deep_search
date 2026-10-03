@@ -90,3 +90,28 @@ class DeepSearchConfig:
     # ⚠️ 本值是天花板而非收缩：实际落盘数 = min(本值, max_urls_to_try)，
     #    归档与 answer 同源于 items —— 单抬本值无效。0 = 不限制。
     archive_max_sources: int = 20
+
+    # ---------- PDF 附件摘要内联（V10.3） ----------
+    # 命中 PDF 落盘时在 server 端直接抽正文关键片段内联进响应。动机：原设计
+    # "正文不返回、路径在归档"依赖调用方自觉消费，而消费纪律写在 SKILL.md 里
+    # —— MCP 直调时不会加载，实测 8 轮检索 pdf_dumps>0 全部被漏看，标准原文
+    # 级材料整批丢失。摘要窗口按关键词打分选取（摘要/结论/工艺/参数 + query 词）。
+    pdf_digest_enabled: bool = True
+    pdf_digest_pages: int = 12            # 参与抽取的最大页数（页数再多边际递减）
+    pdf_digest_win: int = 300             # 片段窗口长度（字符）
+    pdf_digest_max_per_pdf: int = 1200    # 单份 PDF 摘要额度（字符）
+    pdf_digest_max_total: int = 6000      # 单次响应全部 PDF 摘要总额度（字符）
+
+    # ---------- PDF 落盘缓存（V10.3） ----------
+    # 按 URL hash 跨轮复用：命中即不重新下载/写盘（元数据与摘要直接复用），
+    # mtime 不再被覆盖，"本轮新增了哪些 PDF"可判。PDF 内容极少变，同字节数
+    # 即视为未变。
+    pdf_cache_enabled: bool = True
+
+    # ---------- simhash 跨源去重（V10.3） ----------
+    # 与 3-gram 包含度 OR 组合：包含度（单窗+多窗）管"同文/镜像子串"，
+    # simhash 兜"整篇复用但重排/换字"——gram 类判据对重排全盲，simhash 看
+    # 全段词汇分布才看得见。64-bit 汉明距离 ≤ 4 判同文（独立文章实测 >10，
+    # 阈值保守防误杀）。
+    simhash_enabled: bool = True
+    simhash_hamming_threshold: int = 4

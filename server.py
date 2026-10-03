@@ -119,12 +119,22 @@ def _render_result(result: dict) -> str:
             prefix.append(f"cross_round={len(cross)}(与已给过来源正文雷同)")
         # PDF 落盘计数（V10.2）：落盘支链的正文不进结果，只有这个数能让调用方
         # 知道"有附件存在"——实测漏看时 agent 会把标准原文级的材料整个丢掉。
+        # V10.3：关键片段摘要直接内联在响应末尾（_pdf_digest_section），头里
+        # 只做指引；新增/复用数来自 PDF 落盘缓存。
         pdfs = meta.get("pdf_sources") or []
         if pdfs:
-            prefix.append(f"pdf_dumps={len(pdfs)}(正文未返回；附件节与原文路径见归档)")
+            new_n = int(meta.get("pdf_new") if meta.get("pdf_new") is not None
+                        else sum(1 for p in pdfs if not p.get("reused")))
+            reuse_n = len(pdfs) - new_n
+            cache_s = f"新增{new_n}" if reuse_n == 0 else f"新增{new_n}/复用{reuse_n}"
+            inline_s = "，关键片段摘要已内联文末" if meta.get("_pdf_digest_section") else ""
+            prefix.append(
+                f"pdf_dumps={len(pdfs)}({cache_s}{inline_s}；附件节与原文路径见归档)"
+            )
         head = (" · ".join(prefix) + "\n\n") if prefix else ""
         # 逐条来源清单（含截断标记）：先给判据再给内容
-        return head + _render_sources(meta.get("sources") or []) + answer
+        digest_section = meta.get("_pdf_digest_section") or ""
+        return head + _render_sources(meta.get("sources") or []) + answer + digest_section
 
     meta = result.get("metadata", {}) or {}
     return "Search failed: " + (
@@ -140,8 +150,9 @@ async def deep_search(
     """深度搜索：search_engine 多源聚合搜索（Go CLI 聚合 + ranking_meta 打分）+ Scrapling 网页抓取。
 
     检索结果**始终**落盘一份 markdown 归档（deep_search/temp/md），路径见返回头。
-    响应命中 PDF 即原文件落盘 temp/pdf/（正文不进结果）：返回头 `pdf_dumps=N`
-    提示数量，附件清单与原文路径在归档的「PDF 附件」节，要正文直接读 `path`。
+    响应命中 PDF 即落盘 temp/pdf/ 并自动抽取关键片段（开头+打分窗口，限额）内联
+    在响应末尾「PDF 附件摘要」节——标准/文献级来源不再依赖调用方自觉消费；
+    同一 URL 重复命中走本地缓存（不重新下载），返回头标注新增/复用数。
     签名刻意收窄：没有 time_range / engine / max_results / save_archive 参数 ——
     它们是绕过流水线的旁路开关（engine 单跑曾把候选池从约 96 条塌到 6 条），
     留在 schema 里会制造"调用方能控制它"的错觉，均已从签名移除。

@@ -77,7 +77,7 @@ flowchart TD
     FB -->|"是，但有摘要"| FBACK["answer 降级为搜索摘要<br/>source=exa_fallback"]
     FB -->|"否"| RET
     FBACK --> RET
-    RET["return answer + metadata<br/>统计行 · Sources 清单 · 各来源正文 · PDF 附件清单"]
+    RET["return answer + metadata<br/>统计行 · Sources 清单 · 各来源正文 · PDF 附件摘要（内联）"]
 
     classDef entry fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
     classDef decision fill:#fff3e0,stroke:#ef6c00,stroke-width:1.5px
@@ -157,7 +157,7 @@ config = DeepSearchConfig(
 返回**字符串**，自上而下：统计行 → Sources 清单 → 各来源正文：
 
 ```
-Source: scrapling_filtered · fetched=15 · dedup 22→15 · truncated=yes(原文 78000 字符) · Archive: /path · skipped_repeats=4 · cross_round=2 · pdf_dumps=2(正文未返回；附件节与原文路径见归档)
+Source: scrapling_filtered · fetched=15 · dedup 22→15 · truncated=yes(原文 78000 字符) · Archive: /path · skipped_repeats=4 · cross_round=2 · pdf_dumps=2(新增2；关键片段摘要已内联文末；附件节与原文路径见归档)
 Sources:
   1. 2026-03-18 1.0  36kr.com/p/3728136166797832
   2. 2026-07-04 0.88  readaitime.com/news/...  [truncated]
@@ -173,13 +173,13 @@ Sources:
   - `cross_round=K`：抓之后按正文相似度剔（跨站转载，URL 拦不住）。
   - 账本只在服务进程内存（`ledger.py`），重启即清零；只记交付过的条目（被淘汰的不记，保留回归可能）。
   - 极端情况候选池剔空 → `fetched=0`、正文退化为搜索摘要——不是失败，是"这轮没有新东西"。
-- `pdf_dumps=N`（V10.2）：本轮有 N 份 PDF 落盘 `temp/pdf/`。**PDF 不在正文、不在 Sources、不计入 fetched_count**——没有这个数，调用方不知道有附件存在（实测：GB 5009.97-2016 标准原文级材料因此被整份漏读）。消费方式：读归档「PDF 附件」节拿 `path`，与任务相关的直接读原文件提要点，引用用附件节里的原始 `url`。
+- `pdf_dumps=N(新增A/复用B…)`（V10.2 计数；V10.3 摘要内联）：本轮有 N 份 PDF 落盘 `temp/pdf/`，同 URL 命中本地缓存不重复下载（A 新增 / B 复用）。server 端自动抽取关键片段（单份 ≤1200 字、总额 ≤6000 字）追加在响应末尾「PDF 附件摘要」节——摘要回答"这份 PDF 讲什么、值不值得用"；引用大段原文或核对细节时读归档「PDF 附件」节拿 `path` 读原文件，引用用附件节里的原始 `url`。PDF 仍不在正文、不在 Sources、不计入 fetched_count。
 - `metadata`：`fetched_count` / `sources`（逐条判据）/ `truncated` / `semantic_dedup` / `pdf_sources`（PDF 附件清单，不计入 fetched_count）。
 
 ### 归档（markdown，不可关闭）
 
 - 位置：`temp/md/<年 月日 时：分>/NN_<关键词>.md`。文件夹名冒号用**全角**（半角是 Windows 非法字符）；序号 = 本会话轮次，同一分钟重启的服务会续号不覆盖；任务 = 一个 MCP 进程，"同一件事的几轮"天然聚在一个文件夹。
-- 结构：`#` 标题 → 元信息行 → PDF 附件区（有才有）→ 各来源小节（`**[n] 域名**` 标记 + `## 来源: 完整 URL` + 正文）。`[n]` 基于未截断全文抽取，answer 被截断时标记仍完整。
+- 结构：`#` 标题 → 元信息行 → PDF 附件区（有才有，逐份含关键片段摘要）→ 各来源小节（`**[n] 域名**` 标记 + `## 来源: 完整 URL` + 正文）。`[n]` 基于未截断全文抽取，answer 被截断时标记仍完整。
 - 正文经段落重排（硬折续行接回、段间补空行、超长按句末标点切）——**只动空白、一个字不改**（`tests/test_archive.py` 锁死）。
 
 ## 核心机制
