@@ -66,8 +66,8 @@ def _render_sources(sources: list) -> str:
     if not sources:
         return ""
     lines = [
-        "Sources (逐条来源判据；score=正文质量分 0~1；"
-        "date=来源发布日期，—=该来源未提供，不得据此推断):"
+        "Sources (逐条来源判据；score=正文形态分 · auth=信源权威度 · cov=query 词覆盖率，"
+        "均 0~1；date=来源发布日期，—=该来源未提供，不得据此推断):"
     ]
     for s in sources:
         flags = []
@@ -75,8 +75,12 @@ def _render_sources(sources: list) -> str:
             flags.append("truncated")
         flag = ("  [" + ", ".join(flags) + "]") if flags else ""
         date = s.get("date") or "—"
+        auth = s.get("authority")
+        cov = s.get("coverage")
+        auth_s = f" auth={auth:.2f}" if isinstance(auth, (int, float)) else ""
+        cov_s = f" cov={cov:.2f}" if isinstance(cov, (int, float)) else ""
         lines.append(
-            f"  {s.get('n')}. {date:<10} {s.get('score')}  "
+            f"  {s.get('n')}. {date:<10} {s.get('score')}{auth_s}{cov_s}  "
             f"{_short_url(s.get('url') or '')}{flag}"
         )
     return "\n".join(lines) + "\n\n"

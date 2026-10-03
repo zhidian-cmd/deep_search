@@ -174,7 +174,7 @@ Sources:
   - 账本只在服务进程内存（`ledger.py`），重启即清零；只记交付过的条目（被淘汰的不记，保留回归可能）。
   - 极端情况候选池剔空 → `fetched=0`、正文退化为搜索摘要——不是失败，是"这轮没有新东西"。
 - `pdf_dumps=N(新增A/复用B…)`（V10.2 计数；V10.3 摘要内联）：本轮有 N 份 PDF 落盘 `temp/pdf/`，同 URL 命中本地缓存不重复下载（A 新增 / B 复用）。server 端自动抽取关键片段（单份 ≤1200 字、总额 ≤6000 字）追加在响应末尾「PDF 附件摘要」节——摘要回答"这份 PDF 讲什么、值不值得用"；引用大段原文或核对细节时读归档「PDF 附件」节拿 `path` 读原文件，引用用附件节里的原始 `url`。PDF 仍不在正文、不在 Sources、不计入 fetched_count。
-- `metadata`：`fetched_count` / `sources`（逐条判据）/ `truncated` / `semantic_dedup` / `pdf_sources`（PDF 附件清单，不计入 fetched_count）。
+- `metadata`：`fetched_count` / `sources`（逐条判据：score 形态 + authority 权威度 + coverage 覆盖率，V10.4 三维）/ `truncated` / `semantic_dedup` / `pdf_sources`（PDF 附件清单，不计入 fetched_count）。交付顺序由三维合成分 rank_score 决定（0.50·form + 0.40·auth + 0.10·cov，config.rank_w_* 可调），content_score 的 0.4 形态闸门不变。
 
 ### 归档（markdown，不可关闭）
 

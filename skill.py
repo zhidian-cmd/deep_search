@@ -296,8 +296,24 @@ class DeepSearchSkill:
 
         _lap("split")
 
-        # 3.5 排序：显式再排一次，让"同簇留哪一条"有确定顺序。
-        items = filters.rank_by_content_score(main_fetched)
+        # 3.5 三维合成排序（V10.4）：content_score 照旧管形态（闸门不变）；
+        # 权威度（URL 静态表）与 query 覆盖率（批内 idf）是独立维度，合成
+        # rank_score 决定交付顺序。覆盖率必须在此处批量算——它要看到同批
+        # 全部正文才能算文档频率。
+        if self.config.authority_enabled:
+            for d in main_fetched:
+                d["authority"] = filters.authority_score(d.get("url") or "")
+        if self.config.coverage_enabled:
+            covs = filters.query_coverage(
+                [d.get("text") or "" for d in main_fetched], query)
+            for d, c in zip(main_fetched, covs):
+                d["coverage"] = c
+        items = filters.rank_items(
+            main_fetched,
+            self.config.rank_w_form,
+            self.config.rank_w_authority,
+            self.config.rank_w_coverage,
+        )
         _lap("rank")  # 标签是 rank：去重在其后才发生
 
         # 3.6 自适应降权学习：成功抓到的条目累积观察；同域一轮只采一次。
@@ -514,8 +530,9 @@ class DeepSearchSkill:
         # 取样为空（不可用）的条目各自成单条：不参与聚类，也不被丢
         survivors += [i for i in range(n) if i not in grouped]
 
-        # 取前 target：按 content_score 降序（不足则全取）
-        survivors.sort(key=lambda i: (-float(items[i].get("score") or 0.0), i))
+        # 取前 target：按合成 rank_score 降序（与交付/截断同一排序键；不足则全取）
+        survivors.sort(key=lambda i: (-float(items[i].get("rank_score")
+                                              or items[i].get("score") or 0.0), i))
         kept_idx = survivors[:target] if target > 0 else survivors
         kept = [items[i] for i in kept_idx]
 
@@ -642,6 +659,10 @@ class DeepSearchSkill:
                 "n": i,
                 "url": d.get("url") or "",
                 "score": round(float(d.get("score", 0.0)), 3),
+                # V10.4：权威度与覆盖率并列透出——调用方据此判断"谁说的可信"
+                # 与"讲了几成"，不再只看形态分。
+                "authority": round(float(d.get("authority", 0.0)), 2),
+                "coverage": round(float(d.get("coverage", 0.0)), 2),
                 "truncated": (d.get("url") or "") in cut,
                 # 日期原文来自候选阶段（aggregate 只做透传，不解析），此处归一成 ISO
                 "date": helpers.normalize_date(dates.get(d.get("url") or "") or ""),

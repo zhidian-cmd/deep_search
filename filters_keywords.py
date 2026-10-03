@@ -418,3 +418,103 @@ QUALITY_NEGATIVE_MARKERS = [
 ]
 
 PUNCTUATION_CHARS = "。！？，、；：,.!?;:"
+
+# ========== 信源权威度层级表（V10.4，独立于 content_score 的第二打分维度） ==========
+# 动机（2026-10-03 粮油加工 8 轮检索实测）：content_score 管"像不像干净正文"，
+# 管不了"信源可不可信"——厂商选型广告页 0.972 与行业标准 0.956 同分同区，
+# 营销内容凭文案干净就能压过权威来源。本表把"权威度"拆成独立分数并列透出，
+# 排序时与形态分、query 覆盖率合成 rank_score（权重见 config.rank_w_*）。
+#
+# 层级口径（0~1）：
+#   0.95  gov.cn / edu.cn / 科研院所 / 标准平台 / 顶级期刊与数据库
+#   0.85~0.92  国际组织 / 专业数据库 / 法律数据库 / 行业学会
+#   0.62~0.80  主流媒体 / 权威企业官网 / 专业社区（dxy、github 等）
+#   0.55~0.60  百科 / 头部垂直媒体
+#   0.45~0.52  垂直内容 / 健康门户 / 书籍转载 / 参数评测站 / 公众号
+#   0.35~0.42  问答 / 自媒体 / 论文库 / 范文考试站
+#   0.28~0.30  文库下载站 / 厂商营销 / 内容农场 / 商城
+# ⚠️ 与 DOMAIN_WEIGHTS 刻意不同值：那张表服务形态分（0.5~1.5 乘性权重），
+#    本表是独立 0~1 分。最长后缀匹配（www. 归一），未命中兜底 0.50。
+# ⚠️ 覆盖面声明：本表 ~150 条为常见站先验，**未知站一律 0.5**（不奖不罚）；
+#    表只提供"一眼能认的大站"，长尾判断交给调用方看 cov 与正文本身。
+AUTHORITY_TIERS = {
+    # ---- 通用后缀：政府 / 高校 / 科研（先给足，覆盖面最大）----
+    "gov.cn": 0.95, "edu.cn": 0.92, "ac.cn": 0.92,
+    "cas.cn": 0.95, "cass.cn": 0.95, "caas.cn": 0.95, "cae.cn": 0.95,
+    # ---- 国际组织 / 国际标准 ----
+    "who.int": 0.95, "fao.org": 0.90, "un.org": 0.90, "oecd.org": 0.85,
+    "worldbank.org": 0.85, "imf.org": 0.85, "europa.eu": 0.85,
+    "iso.org": 0.90, "iec.ch": 0.90, "irri.org": 0.90, "cgiar.org": 0.90,
+    # ---- 顶级期刊 / 学术数据库 ----
+    "nature.com": 0.92, "science.org": 0.92, "cell.com": 0.92,
+    "thelancet.com": 0.92, "nejm.org": 0.92, "bmj.com": 0.92,
+    "jamanetwork.com": 0.92, "pubmed.ncbi.nlm.nih.gov": 0.95,
+    "ncbi.nlm.nih.gov": 0.95, "arxiv.org": 0.90, "psyarxiv.com": 0.82,
+    "sciencedirect.com": 0.90, "springer.com": 0.90, "link.springer.com": 0.90,
+    "wiley.com": 0.90, "tandfonline.com": 0.90, "sagepub.com": 0.90,
+    "ieee.org": 0.90, "acm.org": 0.90, "aps.org": 0.90, "rsc.org": 0.90,
+    "acs.org": 0.90, "mdpi.com": 0.78, "frontiersin.org": 0.78,
+    "plos.org": 0.82, "journals.plos.org": 0.82,
+    "cnki.net": 0.88, "wanfangdata.com.cn": 0.88, "cqvip.com": 0.85,
+    "ssrn.com": 0.85, "semanticscholar.org": 0.85, "doi.org": 0.90,
+    "openreview.net": 0.85, "researchgate.net": 0.80, "paperswithcode.com": 0.75,
+    # ---- 标准与法规平台 ----
+    "gb688.cn": 0.95, "ndls.org.cn": 0.95, "cssn.cn": 0.90,
+    "pkulaw.com": 0.85, "lawinfochina.com": 0.85, "chinacourt.org": 0.80,
+    "law-lib.com": 0.60,
+    # ---- 科研院所 / 学会（实测命中 + 常见）----
+    "ricesci.cn": 0.95, "zwxb.chinacrops.org": 0.95, "gxaas.net": 0.95,
+    "haas.cn": 0.95, "cdas.cn": 0.85, "ags.org.cn": 0.85, "csa.org.cn": 0.85,
+    # ---- 官方媒体 ----
+    "xinhuanet.com": 0.78, "news.cn": 0.78, "people.com.cn": 0.75,
+    "qstheory.cn": 0.75, "cctv.com": 0.75, "cnr.cn": 0.72,
+    "china.com.cn": 0.72, "gmw.cn": 0.72, "chinanews.com.cn": 0.72,
+    "cyol.com": 0.72, "china.com.cn": 0.72,
+    # ---- 市场化媒体 / 财经 ----
+    "caixin.com": 0.75, "yicai.com": 0.72, "thepaper.cn": 0.72,
+    "21jingji.com": 0.70, "jiemian.com": 0.70, "stcn.com": 0.68,
+    "cnstock.com": 0.68, "bjnews.com.cn": 0.68, "infzm.com": 0.68,
+    "huxiu.com": 0.68, "36kr.com": 0.62, "wallstreetcn.com": 0.62,
+    "cls.cn": 0.65, "eastmoney.com": 0.60, "tmtpost.com": 0.60,
+    "leiphone.com": 0.60, "huanqiu.com": 0.60, "guancha.cn": 0.58,
+    "ifeng.com": 0.58, "ithome.com": 0.58, "cnbeta.com": 0.55,
+    "jrj.com.cn": 0.55, "hexun.com": 0.55, "10jqka.com.cn": 0.55,
+    "xueqiu.com": 0.50,
+    # ---- 权威企业官网 / 专业社区 ----
+    "cnrice.com.cn": 0.70, "shimadzu.com.cn": 0.70, "huawei.com": 0.70,
+    "microsoft.com": 0.70, "apple.com": 0.70, "ibm.com": 0.70,
+    "nvidia.com": 0.70, "intel.com": 0.70, "amd.com": 0.70,
+    "github.com": 0.70, "huggingface.co": 0.70, "pytorch.org": 0.70,
+    "tensorflow.org": 0.70, "stackoverflow.com": 0.68, "dxy.cn": 0.68,
+    "msdmanuals.com": 0.70, "msdmanuals.cn": 0.70, "antpedia.com": 0.62,
+    "w3.org": 0.80, "rfc-editor.org": 0.80, "mozilla.org": 0.65,
+    # ---- 百科 ----
+    "baike.baidu.com": 0.58, "baike.baidu.hk": 0.58, "yixue.com": 0.58,
+    "newton.com.tw": 0.55, "baike.com": 0.50, "sogou.com": 0.50,
+    "wikipedia.org": 0.60, "zhihu.com": 0.55, "mbalib.com": 0.52,
+    # ---- 垂直内容 / 健康门户 / 书籍转载 / 评测参数站 ----
+    "health.baidu.com": 0.48, "youlai.cn": 0.48, "hbcbly.com": 0.48,
+    "maigoo.com": 0.45, "jucanw.com": 0.45, "miaoshou.net": 0.45,
+    "page.sm.cn": 0.45, "gf.cabr-fire.com": 0.50, "inews.qq.com": 0.55,
+    "qq.com": 0.50, "sohu.com": 0.45, "163.com": 0.45, "sina.com.cn": 0.45,
+    "haodf.com": 0.55, "39.net": 0.45, "xywy.com": 0.45, "120ask.com": 0.35,
+    "zol.com.cn": 0.50, "pconline.com.cn": 0.50, "it168.com": 0.50,
+    "autohome.com.cn": 0.55, "smzdm.com": 0.45, "mafengwo.cn": 0.45,
+    "ctrip.com": 0.50, "bjx.com.cn": 0.60, "solarbe.com": 0.55,
+    "mp.weixin.qq.com": 0.45, "douban.com": 0.50, "bilibili.com": 0.45,
+    "infoq.cn": 0.55, "csdn.net": 0.42, "juejin.cn": 0.45,
+    "cnblogs.com": 0.45, "segmentfault.com": 0.48, "oschina.net": 0.45,
+    "v2ex.com": 0.35, "runoob.com": 0.40, "w3school.com.cn": 0.40,
+    # ---- 问答 / 自媒体 / 论文库 / 范文考试站 ----
+    "weibo.com": 0.38, "blog.sina.com.cn": 0.35, "nongyelu.com": 0.38,
+    "360qiwen.com": 0.35, "knowcat.cn": 0.38, "gwyoo.com": 0.38,
+    "qianqiantushu.com": 0.35, "6miu.com": 0.28, "xiaohongshu.com": 0.35,
+    "douyin.com": 0.30, "yjbys.com": 0.35, "ruiwen.com": 0.35,
+    "unjs.com": 0.35, "liuxue86.com": 0.35, "diyifanwen.com": 0.35,
+    "oh100.com": 0.35, "51test.net": 0.40,
+    # ---- 文库下载 / 厂商营销 / 内容农场 / 商城 ----
+    "cucdc.com": 0.28, "ricemillmachinerys.com": 0.28,
+    "taizyagromachine.com": 0.28, "pwsannong.com": 0.28,
+    "taobao.com": 0.30, "tmall.com": 0.30, "jd.com": 0.40,
+}
+AUTHORITY_DEFAULT = 0.50     # 未命中兜底：不奖不罚

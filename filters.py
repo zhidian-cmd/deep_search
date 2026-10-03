@@ -20,6 +20,7 @@ content_score(text, url) -> 0~1 连续分（不是布尔过滤）：
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import unquote, urlparse
@@ -42,6 +43,8 @@ from .filters_keywords import (
     QUALITY_POSITIVE_MARKERS,
     QUALITY_NEGATIVE_MARKERS,
     PUNCTUATION_CHARS,
+    AUTHORITY_TIERS,
+    AUTHORITY_DEFAULT,
 )
 from . import filters_learn
 from . import helpers
@@ -309,8 +312,95 @@ def content_score(text: str, url: str = "") -> float:
     return round(max(0.0, min(1.0, score)), 4)
 
 
+# ========== 信源权威度分（V10.4：独立第二维度，与 content_score 正交） ==========
+
+def authority_score(url: str) -> float:
+    """URL → 信源权威度 0~1（AUTHORITY_TIERS 最长后缀匹配，未命中 0.50）。
+
+    只判"谁说的"，不判"说得干不干净"（那是 content_score）——两者正交：
+    厂商广告页可以是干净正文（形态分高）但权威度低；标准原文页带表格断行
+    （形态分平平）但权威度满分。静态表不打分迭代，接 filters_learn 的降权
+    是刻意不做：学习层抓的是形态/延迟信号，掺进权威度会互相污染。
+    """
+    host = (urlparse(url).hostname or "").lower()
+    best = None
+    for dom, tier in AUTHORITY_TIERS.items():
+        if host == dom or host.endswith("." + dom):
+            if best is None or len(dom) > len(best[0]):
+                best = (dom, tier)
+    return best[1] if best else AUTHORITY_DEFAULT
+
+
+# ========== query 词覆盖率（V10.4：连续信号，取代"3 字过闸"的单一判据） ==========
+
+_RE_COV_SPLIT = re.compile(r"[\s,，、;；]+")
+_COV_TERM_MIN_LEN = 2       # 短于 2 字的 token 无判别力
+_COV_NO_TERM_DEFAULT = 0.5  # query 拆不出词时的中性分（不奖不罚）
+
+
+def query_coverage(texts: List[str], query: str) -> List[float]:
+    """批量计算每条正文对 query 的**词覆盖率** 0~1（与 query 同序）。
+
+    覆盖率 = Σ idf(词)·命中(词) / Σ idf(词)，命中 = 词的精确子串出现在正文
+    （大小写归一）。idf 按**本批**文档频率算：全批都命中的词（如检索稻谷时
+    的"稻谷"）自动降权，只在少数文档出现的词（如"蒸谷米"）权重高——这是
+    把旧 3 字过闸的"命中/不命中"升级成连续信号的关键：过闸只回答"沾不沾边"，
+    覆盖率回答"这篇讲了这个问题的几成"。
+
+    批内统计是刻意设计：coverage 的用途是**同批排序**（合成 rank_score），
+    跨批可比性不需要。query 拆不出词（纯单字/空）时返回中性 0.5 列表。
+    """
+    terms = [t for t in _RE_COV_SPLIT.split((query or "").strip())
+             if len(t) >= _COV_TERM_MIN_LEN]
+    n = len(texts)
+    if not terms or n == 0:
+        return [_COV_NO_TERM_DEFAULT] * n
+    low_texts = [(t or "").lower() for t in texts]
+    idfs = {}
+    for t in terms:
+        tl = t.lower()
+        df = sum(1 for tx in low_texts if tl in tx)
+        idfs[t] = math.log(1.0 + n / (1.0 + df))
+    out = []
+    for tx in low_texts:
+        w_sum = h_sum = 0.0
+        for t, w in idfs.items():
+            w_sum += w
+            if t in tx:
+                h_sum += w
+        out.append(round(h_sum / w_sum, 4) if w_sum else _COV_NO_TERM_DEFAULT)
+    return out
+
+
+# ========== 合成排序（V10.4：形态 × 权威度 × 覆盖率） ==========
+
+def rank_items(items: List[Dict[str, Any]],
+               w_form: float = 0.60,
+               w_auth: float = 0.25,
+               w_cov: float = 0.15) -> List[Dict[str, Any]]:
+    """三维合成分 rank_score = w_form·form + w_auth·auth + w_cov·cov，降序返回。
+
+    form = content_score（形态闸门不变，<0.4 的早已被丢）；authority /
+    coverage 由调用方先算好挂在条目上（缺省按 0 计——只降级不崩溃）。
+    权重来自 59 条真实来源网格搜索（2026-10-03）：a=0.25 在 c=0.10~0.30
+    为平台期，取 c=0.15；首位来源均权威度 0.569→0.859，逐题首位 6/8 换成
+    gov/标准/科研源。rank_score 同时被 truncate_by_score 与去重幸存者排序
+    消费——三处读者共用一个排序键，不会漂移。
+    """
+    for d in items:
+        rs = (w_form * float(d.get("score") or 0.0)
+              + w_auth * float(d.get("authority") or 0.0)
+              + w_cov * float(d.get("coverage") or 0.0))
+        d["rank_score"] = round(rs, 4)
+    return sorted(items, key=lambda d: d.get("rank_score", 0.0), reverse=True)
+
+
 def rank_by_content_score(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """按 content_score 降序排列，返回新列表（生产者都已打好分）。"""
+    """按 content_score 降序排列，返回新列表（生产者都已打好分）。
+
+    ⚠️ V10.4 起主链路改用 rank_items（三维合成）；本函数保留给只需要形态序
+    的调用方与旧测试。
+    """
     return sorted(items, key=lambda d: d.get("score", 0.0), reverse=True)
 
 
@@ -327,7 +417,10 @@ def truncate_by_score(items: List[Dict[str, Any]], max_chars: int) -> Tuple[str,
     total = 0
     cut: Set[str] = set()
     exhausted = False
-    for it in sorted(items, key=lambda d: d.get("score", 0.0), reverse=True):
+    # 排序键与交付顺序同源（rank_score，V10.4；旧数据无此键回退 score）——
+    # 截断砍的必须是"合成排序的队尾"，不是形态分队尾。
+    for it in sorted(items, key=lambda d: d.get("rank_score", d.get("score", 0.0)),
+                     reverse=True):
         t = (it.get("text") or "").strip()
         if not t:
             continue

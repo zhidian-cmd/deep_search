@@ -91,6 +91,22 @@ class DeepSearchConfig:
     #    归档与 answer 同源于 items —— 单抬本值无效。0 = 不限制。
     archive_max_sources: int = 20
 
+    # ---------- 三维合成排序（V10.4） ----------
+    # content_score 照旧管形态（0.4 闸门不变）；authority_score（信源权威度，
+    # filters_keywords.AUTHORITY_TIERS）与 query_coverage（query 词覆盖率，
+    # 批内 idf 加权）是两个独立维度，合成 rank_score 决定交付/截断顺序。
+    # 权重经三轮调参（2026-10-03），样本滚雪球：粮油 59 条 → 10 领域 209 条
+    # → 20 领域 764 条 / 58 题 / 491 host（现场实弹采集，留一领域外推 10/10
+    # 稳定）。最优 a 随样本扩大持续上移（0.25→0.35→0.40），c 收敛到 0.10：
+    # 终版 0.50/0.40/0.10 在 20 个领域全部 ≥ 初版无一回退，与 c=0.05 的激进
+    # 点差距 0.001。coverage 保留一票覆盖"相关性闸放行的擦边页"。
+    # 数据与标注：tests/_eval_dataset_v3.json（AI 辅助标注，非人工金标）。
+    authority_enabled: bool = True
+    coverage_enabled: bool = True
+    rank_w_form: float = 0.50
+    rank_w_authority: float = 0.40
+    rank_w_coverage: float = 0.10
+
     # ---------- PDF 附件摘要内联（V10.3） ----------
     # 命中 PDF 落盘时在 server 端直接抽正文关键片段内联进响应。动机：原设计
     # "正文不返回、路径在归档"依赖调用方自觉消费，而消费纪律写在 SKILL.md 里
