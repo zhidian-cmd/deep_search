@@ -146,6 +146,59 @@ LOW_VALUE_PATH_PATTERNS = [
     "询价", "招标公告", "中标公告", "采购公告", "求购",
 ]
 
+# ========== 文本汤页：站点形态降权（V10.5，2026-10-07） ==========
+# 场景（食品包装 4 轮 60 来源用户评审）：夸克文档预览壳（vt.quark.cn/blm/
+# quark-doc-ssr）把多篇无关文档拼成一团"文本汤"，形态信号（长度/标点/段落）
+# 全部失灵——同类两页一个 0.00 一个 0.98，纯看运气；问卷表单壳（wenjuan.com）
+# 只有一列题目，也拿过 0.929。
+# 定位：与 LOW_VALUE 同哲学——**降权不是拉黑**，封顶 LOW_VALUE_HOST_CAP。
+# ⚠️ 刻意不做"正文复读率"检测：实测（同批归档标定）夸克汤页字符 10~24-gram
+#    复读率 0.011，与正常文章 0.000~0.055 完全分不开——它是"多篇无关文档
+#    拼接"而非"复读"，重复率假说被数据否决，只留站点形态规则。
+TEXT_SOUP_HOSTS = [
+    "wenjuan.com",          # 问卷表单壳（题目列表，无数据）
+]
+
+# host + path 同时命中才拦：quark 主域下 baike.quark.cn 词条是可用信源，
+# 只有 /blm/quark-doc-ssr 文档预览壳是汤。
+TEXT_SOUP_PATH_PATTERNS = [
+    ("quark.cn", "/blm/quark-doc-ssr"),
+]
+
+# ========== 机翻报告工厂（V10.5，2026-10-07） ==========
+# 场景（同上评审）：市场研究站的**中文子页**是付费报告落地页的机器翻译，数字
+# 自相矛盾且换算掉零（straitsresearch 同页"10 亿美元"与"11094.4 亿美元"并存，
+# zion 的 $384B 译成"384.35 亿美元"）。打标不是拦——页面仍有信息量，但调用方
+# 必须知道"数字未经核实，建议查英文原页"。
+# ⚠️ 只对已知报告工厂域生效 + 路径带中文区标记才打标；这些站的英文原页不打。
+MT_REPORT_MILL_DOMAINS = [
+    "sphericalinsights.com",
+    "straitsresearch.com",
+    "zionmarketresearch.com",
+    "researchnester.com",
+    "gminsights.com",
+    "fortunebusinessinsights.com",
+    "databridgemarketresearch.com",
+    "mordorintelligence.com",
+    "globalmarketinsights.com",
+    "towardspackaging.com",
+]
+
+# ========== 弱核心词降权（V10.5，2026-10-07） ==========
+# query 核心词没进「标题 + 正文前 500 字」的页判弱相关，rank_score × 本因子。
+# 动机与实测案例见 filters.core_term_front_hits。是降权不是否决——真内容页
+# 靠正文质量仍能翻回来。
+WEAK_CORE_FACTOR = 0.45
+
+# 前窗统计的**泛词排除表**：这些词在任何主题的市场/政策/技术检索里都会高频
+# 出现，无主题判别力（实测：HALS 跑题报告前窗"市场规模"恰好 ×2，sum/max
+# 口径都能压线通过；专名"食品包装"才是 0 次 vs 5+ 次的分离点）。
+# 只在 core_term_front_hits 里排除，query_coverage 不受影响。
+FRONT_GATE_GENERIC_TERMS = {
+    "市场规模", "市场空间", "市场容量", "市场份额", "市场分析",
+    "发展趋势", "趋势", "现状", "前景", "预测", "分析", "报告", "政策",
+}
+
 # ========== 模板检测：强标记（命中 → score 0.05） ==========
 TEMPLATE_STRONG_MARKERS = [
     "Enable JavaScript and cookies to continue",

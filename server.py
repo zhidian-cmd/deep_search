@@ -68,11 +68,20 @@ def _render_sources(sources: list) -> str:
     lines = [
         "Sources (逐条来源判据；score=正文形态分 · auth=信源权威度 · cov=query 词覆盖率，"
         "均 0~1；date=来源发布日期，—=该来源未提供，不得据此推断):"
+        " flags 说明: truncated=非完整纳入 / weak-core=核心词未进标题与前500字(疑似跑题) /"
+        " mt=报告工厂中文页(疑似机翻，数字未经核实，建议查英文原页) /"
+        " self-conflict=页内数值自相矛盾(不得当完整证据引用)"
     ]
     for s in sources:
         flags = []
         if s.get("truncated"):
             flags.append("truncated")
+        if s.get("weak_core"):
+            flags.append("weak-core")
+        if s.get("mt"):
+            flags.append("mt")
+        if s.get("self_conflict"):
+            flags.append("self-conflict")
         flag = ("  [" + ", ".join(flags) + "]") if flags else ""
         date = s.get("date") or "—"
         auth = s.get("authority")
@@ -108,6 +117,30 @@ def _render_result(result: dict) -> str:
         # 截断：调用方须据以标注"该来源不得当完整证据引用"。
         if meta.get("truncated"):
             prefix.append(f"truncated=yes(原文 {meta.get('original_length')} 字符)")
+        # 机翻报告工厂计数（V10.5）：逐条标记见 Sources 清单的 mt flag。
+        mt_n = sum(1 for s in (meta.get("sources") or []) if s.get("mt"))
+        if mt_n:
+            prefix.append(
+                f"mt_flagged={mt_n}(报告工厂中文页，数字未经核实，建议查英文原页)"
+            )
+        # 数字冲突（V10.5）：页内自相矛盾=强信号；cross=跨源口径极差（可能是
+        # 子市场/年份不同），只提示核对，不做裁定。
+        for c in (meta.get("number_conflicts") or [])[:2]:
+            kw_unit = f"{c.get('metric')}|{c.get('unit')}"
+            sc = c.get("self_conflict_sources") or []
+            if sc:
+                prefix.append(
+                    f"number_conflict({kw_unit}): 来源{','.join(map(str, sc))}"
+                    " 页内数值自相矛盾，不得当完整证据引用"
+                )
+            cross = c.get("cross")
+            if isinstance(cross, dict):
+                prefix.append(
+                    f"number_conflict({kw_unit}): 跨源数值 "
+                    f"{cross.get('min', 0):.0f}~{cross.get('max', 0):.0f} "
+                    f"{c.get('unit')}（{cross.get('distinct')} 档），"
+                    "口径/年份可能不一，引用前核对"
+                )
         # 归档路径指针：agent 需要完整未截断全文时读它
         archive_path = meta.get("archive_path")
         if archive_path:

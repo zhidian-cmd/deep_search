@@ -3,6 +3,19 @@
 > 本文件已精炼：每个版本只保留结论与关键数字，完整原文备份在 `temp/backup_md_20260925/CHANGELOG.md`。
 > 声明位随版本走，历史注记一律不动（V8.16 立的原则）。
 
+## V10.5（2026-10-07 来源质量五守卫：弱核心词闸 / 汤页规则 / 机翻打标 / 页内日期 / 数字冲突）
+
+- **动机**：食品包装 4 轮 60 来源用户评审（本轮真实检索）——夸克文档预览文本汤 0.98 入选、HALS 添加剂跑题报告进前五、烩面机厂商词条混进交付清单、机翻市场页数字自相矛盾（straitsresearch 同页"10 亿美元"与"11094.4 亿美元"并存）、SEO 软文凭形态分压过权威页。纯噪声占比约 25%。
+- **五项守卫**（规则级改动，不动排序器架构）：
+  - `filters.core_term_front_hits()`：query 专名在「标题+前 500 字」max 单词条频 <2 → `weak_core`，排序 ×0.45（`WEAK_CORE_FACTOR`）。三个标定教训：max 不取 sum（HALS 页 sum 恰好=2 压线）、**泛词排除**（`FRONT_GATE_GENERIC_TERMS`——"市场规模"×2 能把跑题页抬过阈值）、纯数字词不参与。中文 query 撞英文页 fail-open。
+  - 站点汤规则 `TEXT_SOUP_*`：夸克 `/blm/quark-doc-ssr` 预览壳（host+path，baike.quark.cn 不受牵连）与 wenjuan.com 表单壳封顶 `LOW_VALUE_HOST_CAP`。⚠️ 刻意不做正文复读率检测——实测标定夸克汤页字符 10~24-gram 复读率 0.011，与正常文章 0.000~0.055 分不开（"多篇无关文档拼接"≠"复读"），假说被数据否决。
+  - `filters.mt_report_mill_flag()`：10 家报告工厂的中文子页（路径 /zh|/cn|zh-cn）打 `mt` 标，英文原页不打；响应头加 `mt_flagged=N` 提示行。
+  - `rank_items()` 默认改**乘性**合成 `form × (0.5+auth) × (0.9+0.2·cov)`（`config.rank_multiplicative` 可回退线性）。两轮废弃稿：auth 因子 0.55+0.45·auth 太弱（与 cov 因子叠加实测 0.929 vs 0.93 惜败）；cov 因子 ±20% 时 cov=1.0 的 SEO 页能借 cov 翻盘。终版 auth=0.5 中性、0.95→×1.45，cov 收窄 ±10%。
+  - `helpers.extract_date_from_text()`：SERP 没给日期时从页面前 2000 字抽带标签的更新/发布时间（中标签×中日期、中标签×英月、英标签 MDY+DMY 四模式；裸日期不收录）。researchnester/straits 的 "Last updated" 此前全部丢失。
+- **数字冲突提示** `_number_conflicts()`：同一指标窗口（市场规模/空间/容量 ±60 字）内的金额（万亿/亿×美元/欧元/元，万亿归一）两级判据——**页内自相矛盾**（同源同单位极差 ≥5×，强信号，`self_conflict` 逐条透出并标注"不得当完整证据引用"）与**跨源极差**（≥5 档且 ≥10×，软提示"口径/年份可能不一，引用前核对"，最多 2 条）。跨源档数天然巨大（子市场/年份不同，实测 37 档），故不做逐值裁定。
+- 接线：`skill` 3.45 阶段挂 weak_core/mt_flag/page_date → `rank_items`；`_build_sources_meta` 透出 `mt`/`weak_core`/`self_conflict`/date 回退；`server._render_sources` 追加 flags 说明与四种 flag 渲染，`_render_result` 追加 `mt_flagged=`/`number_conflict(...)` 统计行。Sources 行格式再次变更（追加 flag 字段）。
+- ⚠️ MCP 宿主需重连生效。已知边界：泛词表人工维护；弱核心闸对"正文开头是导航/目录"的长页可能误判（fail-open 只有英文页豁免）；数字冲突只认"指标词 ±60 字内的金额"，跨句口径漂移看不见。全量离线回归 12 套 PASS（新增 `tests/test_v105_guards.py` 33 项断言）。
+
 ## V10.4（2026-10-03 三维打分：形态 × 权威度 × 覆盖率）
 
 - **动机**：content_score 管"像不像干净正文"，管不了"信源可不可信"——粮油加工 8 轮实测中厂商选型广告页 0.972 与行业标准 0.956 同分，营销内容凭文案干净压过权威来源；query 相关性只有"≥3 字过闸"的二值判定，没有"讲了几成"的连续度量。

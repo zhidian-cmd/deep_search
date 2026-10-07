@@ -294,6 +294,24 @@ class DeepSearchSkill:
                 kept_relevant.append(d)
             main_fetched = kept_relevant
 
+        # 3.45 弱核心词闸 + 机翻打标 + 页内日期兜底（V10.5）：
+        # - weak_core：query 核心词没进「标题+前 500 字」→ 跑题证据在页首，
+        #   全文口径的 relevance_guard/coverage 都拦不住（HALS 添加剂报告、
+        #   烩面机厂商词条实测混进交付清单），排序时 ×WEAK_CORE_FACTOR；
+        # - mt_flag：报告工厂中文子页（机翻，数字未经核实）打标透出；
+        # - page_date：SERP 没给日期时，从页面前 2000 字抽"更新/发布时间"。
+        for d in main_fetched:
+            try:
+                if filters.core_term_front_hits(
+                        d.get("text") or "", query,
+                        title=d.get("page_title") or "") < 2:
+                    d["weak_core"] = True
+            except Exception as e:
+                self.logger.warning("weak-core gate failed for %s: %s", d.get("url"), e)
+            d["mt_flag"] = filters.mt_report_mill_flag(d.get("url") or "")
+            if not url_dates.get(d.get("url") or ""):
+                d["page_date"] = helpers.extract_date_from_text(d.get("text") or "")
+
         _lap("split")
 
         # 3.5 三维合成排序（V10.4）：content_score 照旧管形态（闸门不变）；
@@ -313,6 +331,7 @@ class DeepSearchSkill:
             self.config.rank_w_form,
             self.config.rank_w_authority,
             self.config.rank_w_coverage,
+            multiplicative=getattr(self.config, "rank_multiplicative", True),
         )
         _lap("rank")  # 标签是 rank：去重在其后才发生
 
@@ -373,6 +392,16 @@ class DeepSearchSkill:
             )
 
         _lap("dedup")
+
+        # 数字冲突提示（V10.5）：页内自相矛盾（强信号）+ 跨源极差（软提示），
+        # 判据与动机见 _number_conflicts。失败不拦主流程。
+        try:
+            conflicts = self._number_conflicts(items)
+        except Exception as e:
+            self.logger.warning("number_conflicts failed: %s", e)
+            conflicts = []
+        if conflicts:
+            result["metadata"]["number_conflicts"] = conflicts
 
         if items:
             # items 已按 score 降序，正文顺序即质量顺序。
@@ -648,8 +677,11 @@ class DeepSearchSkill:
 
         字段：n 序号 / url / score 质量分（0~1）/ truncated 是否完整纳入 /
         date 发布日期（ISO）。
-        ⚠️ date 只对 serpapi/metaso/exa/qianfan 可得，空串=该来源未提供，
+        ⚠️ date 优先 SERP（serpapi/metaso/exa/qianfan），缺兜底页内抽取的
+        「更新/发布时间」（V10.5，只认带标签日期）；仍为空串 = 该来源未提供，
         调用方不得据此推断发布日期；涉及时效的结论必须说明日期不可得。
+        V10.5 追加透出：mt（疑似机翻）/ weak_core（核心词未进前窗）/
+        self_conflict（页内数值自相矛盾）。
         """
         cut = cut_urls or set()
         dates = url_dates or {}
@@ -664,10 +696,83 @@ class DeepSearchSkill:
                 "authority": round(float(d.get("authority", 0.0)), 2),
                 "coverage": round(float(d.get("coverage", 0.0)), 2),
                 "truncated": (d.get("url") or "") in cut,
-                # 日期原文来自候选阶段（aggregate 只做透传，不解析），此处归一成 ISO
-                "date": helpers.normalize_date(dates.get(d.get("url") or "") or ""),
+                # V10.5 判据标记（缺省不出现，False 不写——保持清单紧凑）
+                **({"mt": True} if d.get("mt_flag") else {}),
+                **({"weak_core": True} if d.get("weak_core") else {}),
+                **({"self_conflict": True} if d.get("self_conflict") else {}),
+                # 日期原文来自候选阶段（aggregate 只做透传，不解析），此处归一成
+                # ISO；SERP 没给时回退页内抽取（已是 ISO，直接用）
+                "date": (helpers.normalize_date(dates.get(d.get("url") or "") or "")
+                         or d.get("page_date") or ""),
             })
         return out
+
+    # ---------- 数字冲突提示（V10.5） ----------
+    _NUM_METRIC_KWS = ("市场规模", "市场空间", "市场容量")
+    _RE_MONEY = re.compile(r"(\d+(?:\.\d+)?)\s*(万亿|亿)\s*(美元|欧元|元)")
+
+    @classmethod
+    def _number_conflicts(
+        cls,
+        items: List[Dict[str, Any]],
+        window: int = 60,
+        self_ratio: float = 5.0,
+        cross_min_distinct: int = 5,
+        cross_ratio: float = 10.0,
+    ) -> List[Dict[str, Any]]:
+        """市场数字的可机械判定冲突，两级：
+
+        - **页内自相矛盾（强信号）**：同一来源、同一指标窗口、同一单位下
+          数值极差 ≥ self_ratio 倍（5 倍）——年份演进撑不起这个差距，实测
+          案例是 straitsresearch 同页"10 亿美元"与"11094.4 亿美元"并存。
+          命中来源打 self_conflict 标记（sources 清单透出），正文不得当
+          完整证据引用。
+        - **跨源极差（软提示）**：同一指标+单位在 ≥ cross_min_distinct 档
+          数值、极差 ≥ cross_ratio 倍——通常是子市场/年份口径不同（宠物
+          食品包装 vs 全球食品包装），机械上无法裁定，只提示调用方核对。
+
+        指标词命中窗口 ±window 字符内的金额才算（"市场规模超过 16.8 亿
+        美元"）。最多返回 2 条（按数值档数降序），纯提示不影响交付。
+        """
+        stats: Dict[tuple, Dict[float, Dict[int, str]]] = {}
+        for idx, d in enumerate(items, start=1):
+            t = d.get("text") or ""
+            if not t:
+                continue
+            for m in re.finditer("|".join(cls._NUM_METRIC_KWS), t):
+                lo, hi = max(0, m.start() - window), m.end() + window
+                for mm in cls._RE_MONEY.finditer(t[lo:hi]):
+                    val = float(mm.group(1)) * (10000.0 if mm.group(2) == "万亿" else 1.0)
+                    key = (m.group(0), mm.group(3))
+                    stats.setdefault(key, {}).setdefault(val, {})[idx] = mm.group(0)
+        # 页内自相矛盾：同 item 内同 key 出现极差 ≥ self_ratio 的两档
+        per_item: Dict[tuple, Dict[int, List[float]]] = {}
+        for (kw, unit), vals in stats.items():
+            for val, srcs in vals.items():
+                for idx in srcs:
+                    per_item.setdefault((kw, unit), {}) \
+                            .setdefault(idx, []).append(val)
+        out: List[Dict[str, Any]] = []
+        for (kw, unit), vals in stats.items():
+            entry: Dict[str, Any] = {}
+            self_bad = [i for i, vs in per_item.get((kw, unit), {}).items()
+                        if vs and min(vs) > 0 and max(vs) >= min(vs) * self_ratio]
+            if self_bad:
+                entry["self_conflict_sources"] = sorted(set(self_bad))
+                for i in set(self_bad):
+                    if i <= len(items):
+                        items[i - 1]["self_conflict"] = True
+            distinct = len(vals)
+            if distinct >= cross_min_distinct:
+                lo_v, hi_v = min(vals), max(vals)
+                if lo_v > 0 and hi_v >= lo_v * cross_ratio:
+                    entry["cross"] = {"distinct": distinct,
+                                      "min": lo_v, "max": hi_v}
+            if entry:
+                out.append({"metric": kw, "unit": unit, **entry})
+        out.sort(key=lambda c: -(c.get("cross", {}).get("distinct", 0)
+                                 if isinstance(c.get("cross"), dict) else 0))
+        return out[:2]
 
     @staticmethod
     def _interleave_by_host(urls: List[str], cap: int) -> List[str]:

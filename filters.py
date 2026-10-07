@@ -39,6 +39,11 @@ from .filters_keywords import (
     LOW_VALUE_PATH_FACTOR,
     LOW_VALUE_HOST_SUBSTRINGS,
     LOW_VALUE_PATH_PATTERNS,
+    TEXT_SOUP_HOSTS,
+    TEXT_SOUP_PATH_PATTERNS,
+    MT_REPORT_MILL_DOMAINS,
+    FRONT_GATE_GENERIC_TERMS,
+    WEAK_CORE_FACTOR,
     WHITELIST_HOSTS,
     QUALITY_POSITIVE_MARKERS,
     QUALITY_NEGATIVE_MARKERS,
@@ -125,6 +130,31 @@ def low_value_tier(url: str) -> int:
             if pat in path_and_query or pat in decoded:
                 return 1
     return 0
+
+
+def text_soup_url(url: str) -> bool:
+    """文本汤页判定（V10.5）：预览壳/表单壳的站点形态规则。
+
+    判 URL 不判正文——这类页（夸克文档预览、问卷表单）的形态信号失灵，
+    正文打分不可靠，只有 URL 形态稳定。表见 filters_keywords.TEXT_SOUP_*。
+    """
+    if not url:
+        return False
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False
+    host = (p.hostname or "").lower()
+    if not host:
+        return False
+    if any(s in host for s in TEXT_SOUP_HOSTS):
+        return True
+    path = (p.path or "").lower()
+    if path:
+        for host_sub, path_sub in TEXT_SOUP_PATH_PATTERNS:
+            if host_sub in host and path_sub in path:
+                return True
+    return False
 
 
 def partition_low_value(urls: List[str]) -> Tuple[List[str], List[str]]:
@@ -309,6 +339,11 @@ def content_score(text: str, url: str = "") -> float:
     elif tier == 1:
         score *= LOW_VALUE_PATH_FACTOR
 
+    # 文本汤页降权（V10.5）：预览壳/表单壳封顶。同样在置信度折扣之后——
+    # 站点形态判据，不参与软信号。表与"为何不做复读率检测"见 filters_keywords。
+    if url and text_soup_url(url):
+        score = min(score, LOW_VALUE_HOST_CAP)
+
     return round(max(0.0, min(1.0, score)), 4)
 
 
@@ -372,25 +407,50 @@ def query_coverage(texts: List[str], query: str) -> List[float]:
     return out
 
 
-# ========== 合成排序（V10.4：形态 × 权威度 × 覆盖率） ==========
+# ========== 合成排序（V10.4 线性 → V10.5 乘性，可回退） ==========
 
 def rank_items(items: List[Dict[str, Any]],
                w_form: float = 0.60,
                w_auth: float = 0.25,
-               w_cov: float = 0.15) -> List[Dict[str, Any]]:
-    """三维合成分 rank_score = w_form·form + w_auth·auth + w_cov·cov，降序返回。
+               w_cov: float = 0.15,
+               multiplicative: bool = True) -> List[Dict[str, Any]]:
+    """三维合成分，降序返回。
 
-    form = content_score（形态闸门不变，<0.4 的早已被丢）；authority /
-    coverage 由调用方先算好挂在条目上（缺省按 0 计——只降级不崩溃）。
-    权重来自 59 条真实来源网格搜索（2026-10-03）：a=0.25 在 c=0.10~0.30
-    为平台期，取 c=0.15；首位来源均权威度 0.569→0.859，逐题首位 6/8 换成
-    gov/标准/科研源。rank_score 同时被 truncate_by_score 与去重幸存者排序
-    消费——三处读者共用一个排序键，不会漂移。
+    **乘性（V10.5 默认）**：rank_score = form × (0.5 + auth) × (0.9 + 0.2·cov)，
+    条目带 weak_core=True 时再 × WEAK_CORE_FACTOR。
+
+    动机（2026-10-07 食品包装 4 轮 60 来源用户评审）：线性加权下权威度只是
+    平票依据——form=1.0/auth=0.50 的 SEO 软文恒压过 form=0.88/auth=0.95 的
+    权威页，夸克预览文本汤 0.98、跑题报告都能进前五。乘性把权威度升为
+    "一票否决级"权重。
+
+    - auth 因子 (0.5+auth)：auth=0.5（未命中兜底）→ 1.0 中性不奖不罚；
+      auth∈[0.28, 0.95] → 因子 [0.78, 1.45]——auth=0.5 与 0.95 之间差
+      1.45 倍，权威页对营销页近乎一票否决（首版 0.55+0.45·auth 太弱，
+      与 cov 因子叠加后实测 0.929 vs 0.93 惜败，已废弃）。
+    - cov 因子 (0.9+0.2·cov)：cov=0.5（中性缺省）→ 1.0；保留 V10.4 的
+      "覆盖率给擦边页一票"，量级压到 ±10%——首版 ±20% 时 cov=1.0 的
+      SEO 页能借 cov 翻盘，同样废弃。
+    - weak_core ×0.45：query 核心词没进标题+前 500 字的跑题页（HALS 添加剂
+      报告、烩面机厂商词条实测案例），由 core_term_front_hits 判定。
+
+    **线性（multiplicative=False）**：V10.4 语义原样保留
+    rank_score = w_form·form + w_auth·auth + w_cov·cov，作为回退开关
+    （config.rank_multiplicative=False）。
+
+    rank_score 同时被 truncate_by_score 与去重幸存者排序消费——三处读者
+    共用一个排序键，不会漂移。
     """
     for d in items:
-        rs = (w_form * float(d.get("score") or 0.0)
-              + w_auth * float(d.get("authority") or 0.0)
-              + w_cov * float(d.get("coverage") or 0.0))
+        form = float(d.get("score") or 0.0)
+        auth = float(d.get("authority") or 0.0)
+        cov = float(d.get("coverage") or 0.0)
+        if multiplicative:
+            rs = form * (0.5 + auth) * (0.9 + 0.2 * cov)
+            if d.get("weak_core"):
+                rs *= WEAK_CORE_FACTOR
+        else:
+            rs = (w_form * form + w_auth * auth + w_cov * cov)
         d["rank_score"] = round(rs, 4)
     return sorted(items, key=lambda d: d.get("rank_score", 0.0), reverse=True)
 
@@ -560,3 +620,69 @@ def query_overlap(text: str, query: str, title: str = "") -> Optional[int]:
         if cjk_ratio < _LANG_MISMATCH_CJK_RATIO:
             return None
     return best
+
+
+# ========== 弱核心词前窗闸（V10.5，见 filters_keywords.WEAK_CORE_FACTOR） ==========
+_FRONT_HEAD = 500  # 前窗长度：标题 + 正文前 500 字
+
+_RE_HAS_LETTER = re.compile(r"[\u4e00-\u9fffA-Za-z]")
+
+
+def core_term_front_hits(text: str, query: str, title: str = "",
+                         head: int = _FRONT_HEAD) -> int:
+    """query 核心词在「标题 + 正文前 head 字」内的**最大单词条频**（泛词除外）。
+
+    返回 99 = 无法判定（query 拆不出词 / 全是泛词 / 中文 query 撞英文页），
+    调用方放行。
+
+    三个实测教训（2026-10-07 食品包装归档标定）：
+    - 取 max 不取 sum：HALS 跑题报告前窗 sum 恰好 = 2（市场规模×1+趋势×1）
+      压线通过；专名"食品包装"才是分离点——跑题页 0 次、切题页 5~10 次。
+    - 泛词排除（FRONT_GATE_GENERIC_TERMS）："市场规模"这类词在切题页和跑题
+      页的前窗都会出现 1~2 次，max 口径下仍能把跑题页抬过阈值（实测 ×2），
+      必须剔除，只让专名参与统计。
+    - 纯数字词（"2025"）无主题判别力，不参与统计。
+
+    判定：< 2 判弱相关（weak_core，排序时 × WEAK_CORE_FACTOR）；判定窗口
+    是"页面前窗"而非全文——跑题页的跑题证据恰恰在开头，全文口径的
+    relevance_guard 与 coverage 都已放行过它们。
+    """
+    terms = [t.lower() for t in _RE_COV_SPLIT.split((query or "").strip())
+             if len(t) >= _COV_TERM_MIN_LEN
+             and _RE_HAS_LETTER.search(t)
+             and t not in FRONT_GATE_GENERIC_TERMS]
+    if not terms:
+        return 99
+    window = f"{title or ''}\n{(text or '')[:head]}".lower()
+    if not window.strip():
+        return 99
+    # 中文 query 撞英文页：前窗几乎无中文时字符频次无判别力，fail-open
+    if any(_RE_CJK.search(t) for t in terms):
+        cjk_ratio = len(_RE_CJK.findall(window)) / max(len(window), 1)
+        if cjk_ratio < _LANG_MISMATCH_CJK_RATIO:
+            return 99
+    return max(window.count(t) for t in terms)
+
+
+# ========== 机翻报告工厂打标（V10.5，见 filters_keywords.MT_REPORT_MILL_DOMAINS） ==========
+
+_RE_ZH_PATH = re.compile(r"^/(zh|cn)(?:[/\-]|$)|zh-cn")
+
+
+def mt_report_mill_flag(url: str) -> bool:
+    """报告工厂的**中文子页** → True（疑似机翻，数字未经核实）。
+
+    只打标不拦：页面仍有信息量，但机器翻译的市场数字多次实测自相矛盾
+    （同页两个量级、单位换算掉零），调用方引用前必须回查英文原页。
+    英文原页不打标。
+    """
+    if not url:
+        return False
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False
+    host = (p.hostname or "").lower()
+    if not any(host == d or host.endswith("." + d) for d in MT_REPORT_MILL_DOMAINS):
+        return False
+    return bool(_RE_ZH_PATH.search((p.path or "").lower()))

@@ -277,3 +277,50 @@ def normalize_date(raw: str) -> str:
         days = int(m.group(1)) * _REL_UNIT_DAYS[m.group(2).lower()]
         return (date.today() - timedelta(days=days)).isoformat()
     return ""
+
+
+# ---------- 页面正文日期抽取（V10.5） ----------
+# 背景：SERP 日期只有 4 家引擎给，市场报告页（researchnester"Last updated on:
+# 31 August, 2026"、straitsresearch"最后更新: October 06, 2026"）的页内更新
+# 时间此前全部丢失。只扫页面前 2000 字——页尾的"相关文章日期"不是本页日期。
+
+_PAGE_DATE_HEAD = 2000
+# 中文标签 + 中文数字日期：「更新时间：2026年7月16日」「发布日期: 2026-08-31」
+_PAGE_DATE_CN = re.compile(
+    r"(?:最后更新|更新时间|发布时间|发布日期|发表于|更新于)\s*[:：]?\s*"
+    r"(\d{4})\s*[-/年]\s*(\d{1,2})\s*[-/月]\s*(\d{1,2})", re.I)
+# 英文/中文标签 + 英文月份日期，两种语序都收：
+#   Month DD, YYYY（"最后更新: October 06, 2026"）
+#   DD Month, YYYY（researchnester"Last updated on : 31 August, 2026"——报告
+#   工厂常见的中文化标签配英式日期，漏这个语序全丢）
+_PAGE_DATE_EN = re.compile(
+    r"(?:last\s+updated|updated(?:\s+on)?|published|posted|最后更新|更新于|发布于)"
+    r"(?:\s+on)?\s*[:：]?\s*"
+    r"(?:([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?|(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?)"
+    r"\s*,?\s+(\d{4})", re.I)
+
+
+def extract_date_from_text(text: str, head: int = _PAGE_DATE_HEAD) -> str:
+    """从页面正文前 head 字抽"更新/发布时间"并归一成 ISO；抽不到返回空串。
+
+    优先中文标签模式（更精确），再英文模式。**返回空串 = 页面未标注日期**，
+    调用方不得据此推断。只认带标签的日期——裸日期（正文里随口提到的
+    "2025年3月"）不是本页的发布时间，绝不收录。
+    """
+    s = (text or "")[:head]
+    if not s:
+        return ""
+    m = _PAGE_DATE_CN.search(s)
+    if m:
+        d = _safe_date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if d:
+            return d
+    m = _PAGE_DATE_EN.search(s)
+    if m:
+        # 两种语序：group(1)(2)=Month DD；group(3)(4)=DD Month
+        mon_s = m.group(1) or m.group(4)
+        day_s = m.group(2) or m.group(3)
+        mon = _MONTHS.get(mon_s[:3].lower()) if mon_s else None
+        if mon:
+            return _safe_date(int(m.group(5)), mon, int(day_s))
+    return ""

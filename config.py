@@ -106,6 +106,11 @@ class DeepSearchConfig:
     rank_w_form: float = 0.50
     rank_w_authority: float = 0.40
     rank_w_coverage: float = 0.10
+    # V10.5：rank_items 默认改乘性合成 form×(0.55+0.45·auth)×(0.8+0.4·cov)，
+    # 弱核心词页再 ×0.45（食品包装 60 来源评审：线性加权下权威度只是平票
+    # 依据，SEO 软文/文本汤/跑题报告凭形态分就能压过权威页）。False = 回退
+    # V10.4 线性语义（上面三个权重只在线性分支生效）。
+    rank_multiplicative: bool = True
 
     # ---------- PDF 附件摘要内联（V10.3） ----------
     # 命中 PDF 落盘时在 server 端直接抽正文关键片段内联进响应。动机：原设计
