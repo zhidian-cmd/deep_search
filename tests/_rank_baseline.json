@@ -1,0 +1,518 @@
+{
+ "dirty": {
+  "metrics": {
+   "off_top5": 0,
+   "top1_rel": 0.875,
+   "top5_rel": 0.9
+  },
+  "per_q": {
+   "智能包装 活性包装 保鲜 食品": {
+    "top1_rel": 1.0
+   },
+   "食品包装 可降解材料 禁塑 政策": {
+    "top1_rel": 0.5
+   },
+   "食品包装 市场规模 趋势 2025": {
+    "top1_rel": 1.0
+   },
+   "食品包装设计 消费者 偏好 便利性": {
+    "top1_rel": 1.0
+   }
+  },
+  "top3": {
+   "智能包装 活性包装 保鲜 食品": [
+    "https://iqstap.caas.cn/xwdt/kydt/a366e2b88c214c6c8fd61a88f4284d22.htm",
+    "https://www.ndls.org.cn/standard/detail/af7569e6c48c57127b2d47cc11ff02df",
+    "https://baike.baidu.com/item/%E6%B4%BB%E6%80%A7%E5%8C%85%E8%A3%85/5247346"
+   ],
+   "食品包装 可降解材料 禁塑 政策": [
+    "https://yangpu.hainan.gov.cn/yangpu/zd02/202109/de39a7c195e3459a878c37a7f6d20412.shtml?ddtab=true",
+    "https://www.thepaper.cn/newsDetail_forward_9307057",
+    "http://www.xinhuanet.com/politicspro/2021-01/07/c_1126953915.htm"
+   ],
+   "食品包装 市场规模 趋势 2025": [
+    "https://baike.baidu.com/item/食品包装行业/67959346",
+    "https://m.huaon.com/channel/package/1074760.html",
+    "https://finance.sina.cn/2025-06-25/detail-infchkcr4620345.d.html"
+   ],
+   "食品包装设计 消费者 偏好 便利性": [
+    "https://www.dongdao.net/news_baozhuangsheji/18742",
+    "https://www.iimedia.cn/c1061/93878.html",
+    "https://www.fcipub.org/articleDetail/1552?periodicalId=6"
+   ]
+  }
+ },
+ "v3": {
+  "metrics": {
+   "off_top5": 0,
+   "top1_rel": 0.9828,
+   "top5_rel": 0.9672
+  },
+  "per_q": {
+   "2型糖尿病 降糖药 指南 二甲双胍": {
+    "top1_rel": 1.0
+   },
+   "A股 财报 杜邦分析": {
+    "top1_rel": 1.0
+   },
+   "Docker 容器 网络 原理": {
+    "top1_rel": 1.0
+   },
+   "ERP 选型 制造业": {
+    "top1_rel": 1.0
+   },
+   "MySQL 索引 优化 慢查询": {
+    "top1_rel": 1.0
+   },
+   "Python 异步 asyncio 实践": {
+    "top1_rel": 0.5
+   },
+   "丝绸之路 河西走廊 汉代": {
+    "top1_rel": 1.0
+   },
+   "二手车 过户 流程 注意": {
+    "top1_rel": 1.0
+   },
+   "催化剂 载体 制备方法": {
+    "top1_rel": 1.0
+   },
+   "光伏 逆变器 MPPT 效率": {
+    "top1_rel": 1.0
+   },
+   "免洗米 工艺要点 质量要求 上光 抛光 残留糠粉": {
+    "top1_rel": 1.0
+   },
+   "公摊面积 规范": {
+    "top1_rel": 1.0
+   },
+   "养猫 疫苗 驱虫": {
+    "top1_rel": 1.0
+   },
+   "内网穿透 frp 配置": {
+    "top1_rel": 1.0
+   },
+   "劳动合同 违约金 经济补偿": {
+    "top1_rel": 1.0
+   },
+   "咖啡 手冲 参数": {
+    "top1_rel": 1.0
+   },
+   "固态电池 电解质 量产 工艺": {
+    "top1_rel": 1.0
+   },
+   "基金定投 策略 止盈": {
+    "top1_rel": 1.0
+   },
+   "大棚 蔬菜 温湿度 管理": {
+    "top1_rel": 1.0
+   },
+   "大模型 LoRA 微调 显存": {
+    "top1_rel": 1.0
+   },
+   "婴幼儿配方奶粉 配方注册": {
+    "top1_rel": 1.0
+   },
+   "安史之乱 藩镇 割据": {
+    "top1_rel": 1.0
+   },
+   "幽门螺杆菌 根除 治疗方案": {
+    "top1_rel": 1.0
+   },
+   "无人机 实名登记 法规": {
+    "top1_rel": 1.0
+   },
+   "显示器 色域 参数 解析": {
+    "top1_rel": 1.0
+   },
+   "机械键盘 轴体 区别 选购": {
+    "top1_rel": 1.0
+   },
+   "正念冥想 焦虑 研究": {
+    "top1_rel": 1.0
+   },
+   "母婴 湿疹 护理": {
+    "top1_rel": 1.0
+   },
+   "污水处理 厌氧 工艺参数": {
+    "top1_rel": 1.0
+   },
+   "流感疫苗 接种 禁忌": {
+    "top1_rel": 1.0
+   },
+   "生猪 非洲猪瘟 防控": {
+    "top1_rel": 1.0
+   },
+   "电动汽车 电池衰减 冬季续航": {
+    "top1_rel": 1.0
+   },
+   "留学 雅思 备考": {
+    "top1_rel": 1.0
+   },
+   "碳交易 配额 计算": {
+    "top1_rel": 1.0
+   },
+   "稻谷 制米 工艺流程 清理 砻谷 碾米 成品整理 目的": {
+    "top1_rel": 1.0
+   },
+   "稻谷 籽粒 结构 特点 颖壳 糙米 皮层 胚乳 胚": {
+    "top1_rel": 1.0
+   },
+   "稻谷清理 方法 原理 常用设备 筛选 风选 去石 磁选": {
+    "top1_rel": 1.0
+   },
+   "空气净化器 CADR 选购 参数": {
+    "top1_rel": 1.0
+   },
+   "签证 申根 材料 办理": {
+    "top1_rel": 1.0
+   },
+   "米粉 产品特征 关键工艺 榨粉 切粉 蒸粉 老化": {
+    "top1_rel": 1.0
+   },
+   "米粉 加工工艺 流程 洗米 磨浆 蒸粉 挤丝 复蒸 干燥 直条米粉": {
+    "top1_rel": 1.0
+   },
+   "糙米 营养价值 为什么 碾米 精白米 食用品质 保存": {
+    "top1_rel": 1.0
+   },
+   "羽毛球 步法 训练": {
+    "top1_rel": 1.0
+   },
+   "考研 数学 复习 规划": {
+    "top1_rel": 1.0
+   },
+   "聚氨酯 泡沫 生产工艺": {
+    "top1_rel": 1.0
+   },
+   "股权 代持 风险": {
+    "top1_rel": 1.0
+   },
+   "著作权 侵权 合理使用": {
+    "top1_rel": 1.0
+   },
+   "蒸谷米 营养价值 提高 原理 水热处理 维生素 糊化": {
+    "top1_rel": 1.0
+   },
+   "行政处罚 听证 程序 时限": {
+    "top1_rel": 1.0
+   },
+   "西藏 高反 预防 攻略": {
+    "top1_rel": 1.0
+   },
+   "认知行为疗法 抑郁 练习": {
+    "top1_rel": 1.0
+   },
+   "跨境电商 出口 报关 流程": {
+    "top1_rel": 0.5
+   },
+   "量子计算 纠错 量子比特": {
+    "top1_rel": 1.0
+   },
+   "食品添加剂 使用限量 GB 2760": {
+    "top1_rel": 1.0
+   },
+   "首套房 贷款利率 计算": {
+    "top1_rel": 1.0
+   },
+   "马拉松 训练 计划 新手": {
+    "top1_rel": 1.0
+   },
+   "高考 志愿 填报 顺序": {
+    "top1_rel": 1.0
+   },
+   "高血压 降压药 联合用药": {
+    "top1_rel": 1.0
+   }
+  },
+  "top3": {
+   "2型糖尿病 降糖药 指南 二甲双胍": [
+    "https://www.nhsa.gov.cn/art/2024/12/18/art_14_15152.html",
+    "https://e.dxy.cn/wisdom/front/zhihuihao/1967",
+    "https://diab.cma.org.cn/cn/ncontent.aspx?oid=899"
+   ],
+   "A股 财报 杜邦分析": [
+    "https://caibaoshuo.zendesk.com/hc/zh-cn/articles/360016210813-%E4%BB%80%E4%B9%88%E6%98%AF%E6%9D%9C%E9%82%A6%E5%88%86%E6%9E%90%E6%B3%95",
+    "https://www.qianwenai.com/hub/skills/%40bailian/financial-dupont-analysis",
+    "https://www.dupontmaster.com/blog/articles/maotai-analysis-2026.html"
+   ],
+   "Docker 容器 网络 原理": [
+    "https://baike.baidu.com/item/Docker容器实战：原理、架构与应用/20299281",
+    "https://www.php.cn/faq/488059.html",
+    "https://www.oryoy.com/news/docker-rong-qi-du-li-ip-fen-pei-xiang-jie-tan-suo-rong-qi-wang-luo-pei-zhi-yu-shi-xian-yuan-li.html"
+   ],
+   "ERP 选型 制造业": [
+    "https://www.fanpusoft.com/taiyuan/blog/171670.html",
+    "https://www.yonyou.com/subject/Localization/news/4096",
+    "https://www.jdy.com/article/1972615159868370945.html"
+   ],
+   "MySQL 索引 优化 慢查询": [
+    "https://baike.baidu.com/item/性能优化之MySQL优化/53554597",
+    "https://baike.baidu.com/item/MySQL%208查询性能优化/62382801",
+    "https://m.jb51.net/database/370694hmy.htm"
+   ],
+   "Python 异步 asyncio 实践": [
+    "https://www.oryoy.com/news/zhang-wo-yi-bu-bian-cheng-python-zhong-de-asyncio-ku-xiang-jie-yu-shi-jian.html",
+    "https://www.magedu.com/wenzhang/python/25601.html",
+    "https://docs.pythonlang.cn/3.14/howto/a-conceptual-overview-of-asyncio.html"
+   ],
+   "丝绸之路 河西走廊 汉代": [
+    "https://cssn.cn/kgxc/kgxc_kgsb/202207/t20220728_5431431.shtml",
+    "https://www.hnzk.gov.cn/zhikuxinwen/15138.html",
+    "https://lswh.nwnu.edu.cn/2021/0305/c1044a158643/page.htm"
+   ],
+   "二手车 过户 流程 注意": [
+    "https://m.thepaper.cn/newsDetail_forward_33546287",
+    "https://www.autohome.com.cn/ask/17525311.html",
+    "https://www.maxlaw.cn/n/20260817/11800224802891.shtml"
+   ],
+   "催化剂 载体 制备方法": [
+    "https://baike.baidu.com/item/一种酮烷基化催化剂的制备设备及其制备方法/68733397",
+    "https://vt.quark.cn/blm/quark-doc-ssr-293/preview?id=05853CF653CD1E240148BCB78F66D00D&doc_title=%E4%B8%80%E7%A7%8D%E6%94%B9%E6%80%A7%E7%94%9F%E7%89%A9%E8%B4%A8%E7%A2%B3%E5%82%AC%E5%8C%96%E5%89%82%E8%BD%BD%E4%BD%93%E7%9A%84%E5%88%B6%E5%A4%87%E6%96%B9%E6%B3%95",
+    "https://vt.quark.cn/blm/quark-doc-ssr-293/preview?id=08CB15EC29F34CB4F145F7B5FB59D090&doc_title=%E4%B8%80%E7%A7%8D%E7%94%B2%E7%83%B7%E5%8C%96%E5%82%AC%E5%8C%96%E5%89%82%E8%BD%BD%E4%BD%93%E7%9A%84%E5%88%B6%E5%A4%87%E6%96%B9%E6%B3%95"
+   ],
+   "光伏 逆变器 MPPT 效率": [
+    "https://ishare.ifeng.com/c/s/v0023uhji5L05WApu0zyWqBfsdq-_P6Vl5iXFTz72xE8tnwc__",
+    "https://baike.baidu.com/item/光伏扬水逆变器/6566462",
+    "https://baike.baidu.com/item/%E7%BB%84%E4%B8%B2%E5%BC%8F%E5%85%89%E4%BC%8F%E9%80%86%E5%8F%98%E5%99%A8/67917416"
+   ],
+   "免洗米 工艺要点 质量要求 上光 抛光 残留糠粉": [
+    "https://wjw.hubei.gov.cn/bmdt/jkhb/jkkp/202101/t20210120_3272897.shtml",
+    "https://baike.baidu.com/item/%E5%85%8D%E6%B7%98%E6%B4%97%E7%B1%B3/1916473",
+    "https://www.gwyoo.com/lunwen/gylw/scgylw/201505/597399.html"
+   ],
+   "公摊面积 规范": [
+    "https://www.shcn.gov.cn/col5943/20220822/1220410.html",
+    "https://www2.cqcb.com/shishijingwei/2022-08-31/5007235.html",
+    "https://fdc.rednet.cn/content/646856/50/14545614.html"
+   ],
+   "养猫 疫苗 驱虫": [
+    "https://www.petopic.com/zh/blog/mao-yi-miao-shi-jian-biao-2026",
+    "https://www.chongso.com/czx/mrwzczxbzdg/",
+    "https://k.sina.cn/article_1823348853_6cae187502000w9ps.html"
+   ],
+   "内网穿透 frp 配置": [
+    "https://github.com/jaywcjlove/handbook/blob/master/docs/CentOS/Frp%E5%86%85%E7%BD%91%E7%A9%BF%E9%80%8F%E6%90%AD%E5%BB%BA.md",
+    "https://hsk.oray.com/news/47280.html",
+    "https://www.mslmc.cn/docs/proxy/frp/"
+   ],
+   "劳动合同 违约金 经济补偿": [
+    "https://rst.shaanxi.gov.cn/zcfg/zcjd/202310/t20231012_2526394.html",
+    "https://www.hlj.gov.cn/hlj/c116413/202409/c00_31769481.shtml",
+    "https://fgk.chinatax.gov.cn/zcfgk/c100009/c5193025/content.html"
+   ],
+   "咖啡 手冲 参数": [
+    "https://github.com/dengyanbo/CoffeeKnowledgeBase/blob/main/knowledge/04-pourover-guide.md",
+    "https://baike.baidu.com/item/冰手冲咖啡/67934325",
+    "https://baike.baidu.com/item/手冲咖啡/17091985"
+   ],
+   "固态电池 电解质 量产 工艺": [
+    "https://www.stcn.com/article/detail/3354277.html",
+    "https://www.yicai.com/news/101778862.html",
+    "https://www.cls.cn/detail/2207128"
+   ],
+   "基金定投 策略 止盈": [
+    "https://caifuhao.eastmoney.com/news/20220613144522076285650",
+    "https://caifuhao.eastmoney.com/news/20240310222801051920550",
+    "https://m.cls.cn/detail/1351810"
+   ],
+   "大棚 蔬菜 温湿度 管理": [
+    "https://nyncj.hg.gov.cn/ztzl/ncpzlaq/1152056.html",
+    "https://baike.baidu.com/item/大棚蔬菜种植技术/3670342",
+    "https://bbs.huaweicloud.com/blogs/422937"
+   ],
+   "大模型 LoRA 微调 显存": [
+    "https://developer.aliyun.com/article/1631599",
+    "https://cloud.tencent.com/developer/article/2517177",
+    "https://duoke360.com/post/46602"
+   ],
+   "婴幼儿配方奶粉 配方注册": [
+    "https://zwfw.samr.gov.cn/scjg/wyb/sp/2024072901582390644/",
+    "https://www.yicai.com/news/4610831.html",
+    "https://m.21jingji.com/article/20160418/herald/00f3e34206e00ed9afe715a97d1bc584.html"
+   ],
+   "安史之乱 藩镇 割据": [
+    "https://www.thepaper.cn/newsDetail_forward_1404902?commTag=true",
+    "https://baike.baidu.com/item/%E8%97%A9%E9%95%87%E5%89%B2%E6%8D%AE/283945",
+    "https://vt.quark.cn/blm/quark-doc-ssr-293/preview?id=20BCB458797455F9D36C0AC85008871E&q=%E5%AE%89%E5%8F%B2%E4%B9%8B%E4%B9%B1+%E8%97%A9%E9%95%87+%E5%89%B2%E6%8D%AE&doc_title=%E5%AE%89%E5%8F%B2%E4%B9%8B%E4%B9%B1%E5%8F%8A%E5%85%B6%E8%97%A9%E9%95%87%E5%89%B2%E6%8D%AE%E7%9A%84%E6%BC%94%E5%8F%98"
+   ],
+   "幽门螺杆菌 根除 治疗方案": [
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC11480546/",
+    "https://www.thepaper.cn/newsDetail_forward_9545328",
+    "https://m.gmw.cn/2023-08/03/content_1303465557.htm"
+   ],
+   "无人机 实名登记 法规": [
+    "https://www.wehdz.gov.cn/2022/ztzl_75799/dkjjfw/wrjdjzc/",
+    "https://www.caac.gov.cn/XXGK/XXGK/ZCFBJD/202604/t20260421_230620.html",
+    "https://m.thepaper.cn/newsDetail_forward_32742749"
+   ],
+   "显示器 色域 参数 解析": [
+    "https://github.com/WFCT-Share/Display-Device-Selection-Guidev0.8",
+    "https://baike.baidu.com/item/联想拯救者Y25显示器/61187802",
+    "https://www.php.cn/faq/2538918.html"
+   ],
+   "机械键盘 轴体 区别 选购": [
+    "https://zhuanlan.zhihu.com/p/343035994",
+    "https://www.foxfire.com.cn/article/457.html",
+    "https://www.aode8.com/zhide/info/16038.html"
+   ],
+   "正念冥想 焦虑 研究": [
+    "https://dxs.moe.gov.cn/zx/a/xl_xlyr_xlyral/250319/1984335.shtml",
+    "https://www.gnhvc.edu.cn/xsgzc/2026/0904/c611a22124/page.htm",
+    "https://www.thepaper.cn/newsDetail_forward_29985490"
+   ],
+   "母婴 湿疹 护理": [
+    "https://www.ndls.org.cn/standard/detail/8c928765c843fd05422bad722e6a66bf",
+    "https://www.bjnews.com.cn/detail/1790741151129962.html",
+    "https://www.xinhuanet.com/digital/20260411/7d4ddfe654984d238a4ce336819c55bc/c.html"
+   ],
+   "污水处理 厌氧 工艺参数": [
+    "https://www.gov.cn/zhengce/zhengceku/2021-01/11/content_5578974.htm",
+    "https://wap.cnki.net/qikan-LVKJ201810038.html",
+    "https://vt.quark.cn/blm/quark-doc-ssr-293/preview?id=275C476B6DB7FCB479CAEDB9D3126DEA&q=%E6%B1%A1%E6%B0%B4%E5%A4%84%E7%90%86+%E5%8E%8C%E6%B0%A7+%E5%B7%A5%E8%89%BA%E5%8F%82%E6%95%B0&doc_title=%E5%86%9C%E6%9D%91%E6%B1%A1%E6%B0%B4%E5%A4%84%E7%90%86%E7%9A%84%E5%8E%8C%E6%B0%A7%E2%80%94%E2%80%94%E8%B7%8C%E6%B0%B4%E6%9B%9D%E6%B0%94%E5%B7%A5%E8%89%BA%E5%8F%82%E6%95%B0%E7%A0%94%E7%A9%B6"
+   ],
+   "流感疫苗 接种 禁忌": [
+    "https://www.wsjkw.cq.gov.cn/ztzl_242/jkkp/202511/t20251118_15169343.html",
+    "https://www.msdmanuals.cn/professional/infectious-diseases/immunization/influenza-vaccine",
+    "https://www.huxijie.com/kanhuxi/documents/2269/"
+   ],
+   "生猪 非洲猪瘟 防控": [
+    "https://www.yilong.gov.cn/xwdt/xzdt/t_1839249.html",
+    "https://nyj.ezhou.gov.cn/ztzl/sdgjz/202501/t20250116_686043.html",
+    "https://nynct.hlj.gov.cn/nynct/c115397/202404/c00_31727182.shtml"
+   ],
+   "电动汽车 电池衰减 冬季续航": [
+    "https://www.autohome.com.cn/ask/9594711.html",
+    "https://www.auto-testing.net/news/show-107743.html",
+    "https://diandong123.cn/dian-dong-qi-che-dong-ji-xu-hang-shuai-jian-wen-ti.html"
+   ],
+   "留学 雅思 备考": [
+    "https://www.university.zj.cn/ielts/",
+    "https://www.libaedu.com/info/859.html",
+    "https://www.jiaoyubao.cn/news/n356328.html"
+   ],
+   "碳交易 配额 计算": [
+    "https://www.thepaper.cn/newsDetail_forward_13615817",
+    "https://www.sdstcp.com/news/651",
+    "https://vt.quark.cn/blm/quark-doc-ssr-293/preview?id=0E94F7A0B94CDBB9FBC216C17CB49448&q=%E7%A2%B3%E4%BA%A4%E6%98%93+%E9%85%8D%E9%A2%9D+%E8%AE%A1%E7%AE%97&doc_title=%E7%A2%B3%E4%BA%A4%E6%98%93%E5%88%9D%E5%A7%8B%E9%85%8D%E9%A2%9D%E5%88%86%E9%85%8D%3A%E6%A8%A1%E5%BC%8F%E4%B8%8E%E6%96%B9%E6%B3%95%E7%9A%84%E6%AF%94%E8%BE%83%E5%88%86%E6%9E%90"
+   ],
+   "稻谷 制米 工艺流程 清理 砻谷 碾米 成品整理 目的": [
+    "https://imarket.qq.com/read/1023312945/7",
+    "https://page.sm.cn/blm/node-page-new-995/index?h=v1.hao_produce_note.quark.cn&id=28_7c8312ef01d3395ee77c1efa7a51df96&q=%E7%A8%BB%E8%B0%B7+%E5%88%B6%E7%B1%B3+%E5%B7%A5%E8%89%BA%E6%B5%81%E7%A8%8B+%E6%B8%85%E7%90%86+%E7%A0%BB%E8%B0%B7+%E7%A2%BE%E7%B1%B3+%E6%88%90%E5%93%81%E6%95%B4%E7%90%86+%E7%9B%AE%E7%9A%84&title=",
+    "https://gf.cabr-fire.com/article-65826.htm"
+   ],
+   "稻谷 籽粒 结构 特点 颖壳 糙米 皮层 胚乳 胚": [
+    "https://cgm.haut.edu.cn/info/1043/5762.htm",
+    "http://lscb.shandong.gov.cn/art/2021/6/24/art_15622_10289746.html",
+    "http://www.knowledgebank.irri.org/country-specific/asia/rice-knowledge-for-china/2013-06-03-07-22-29/2013-06-03-07-25-51"
+   ],
+   "稻谷清理 方法 原理 常用设备 筛选 风选 去石 磁选": [
+    "https://www.ndls.org.cn/standard/detail/ec15247772d6180565b636aa98de2d79",
+    "https://mwenku.read.qq.com/read/1023312945/9",
+    "https://xbbs.6miu.com/read-33465.html"
+   ],
+   "空气净化器 CADR 选购 参数": [
+    "https://baike.baidu.com/item/%E7%A9%BA%E6%B0%94%E5%87%80%E5%8C%96%E5%99%A8/56778364",
+    "https://www.ithome.com/1/004/650.htm",
+    "https://news.zol.com.cn/1246/12464293.html"
+   ],
+   "签证 申根 材料 办理": [
+    "https://www.oir.pku.edu.cn/info/1052/1150.htm",
+    "https://www.eeas.europa.eu/delegations/china/%E7%94%B3%E6%A0%B9%E7%AD%BE%E8%AF%81%E7%94%B3%E8%AF%B7%E6%B5%81%E7%A8%8B%EF%BC%9A%E5%9F%BA%E6%9C%AC%E6%8C%87%E5%8D%97_zh-hans?s=166",
+    "https://m.jiemian.com/article/14467685.html"
+   ],
+   "米粉 产品特征 关键工艺 榨粉 切粉 蒸粉 老化": [
+    "http://www.gxaas.net/front/detail/150/3909/142955"
+   ],
+   "米粉 加工工艺 流程 洗米 磨浆 蒸粉 挤丝 复蒸 干燥 直条米粉": [
+    "https://www.ndls.org.cn/standard/detail/627dc419f3d85fe6695afa6794de83ac",
+    "https://baike.baidu.com/item/%E7%B1%B3%E7%B2%89/1636318",
+    "https://baike.baidu.com/subview/90644/90644.htm?_r=1630460190.1714509"
+   ],
+   "糙米 营养价值 为什么 碾米 精白米 食用品质 保存": [
+    "http://lshwzcbj.hunan.gov.cn/lshwzcbj/hdjl/zsk/202506/t20250604_33691325.html",
+    "https://www.thepaper.cn/newsDetail_forward_10026350",
+    "http://news.cyol.com/gb/articles/2026-03/20/content_YOApBdFm9V.html"
+   ],
+   "羽毛球 步法 训练": [
+    "https://baike.baidu.com/item/羽毛球步法/15792500",
+    "https://zzcbjt.com/index.php/lbd-2-12-12912",
+    "https://www.vxixi.com/badminton/tutorials/badminton-footwork-training-guide-2026"
+   ],
+   "考研 数学 复习 规划": [
+    "https://ss.imust.edu.cn/info/1051/3935.htm",
+    "https://github.com/jared0612/2027-Math1-Study-Notes/blob/main/2027%E8%80%83%E7%A0%94%E6%95%B0%E5%AD%A6%E4%B8%80140%2B%E5%A4%8D%E4%B9%A0%E8%AE%A1%E5%88%92_%E5%AE%8C%E6%95%B4%E7%89%88.md",
+    "https://github.com/wxl534/408/blob/main/Math/%E8%80%83%E7%A0%94%E6%95%B0%E5%AD%A6%E4%B8%80%E5%A4%8D%E4%B9%A0/%E5%A4%8D%E4%B9%A0%E6%80%BB%E8%A7%84%E5%88%92.md"
+   ],
+   "聚氨酯 泡沫 生产工艺": [
+    "https://www.pu18.com/baicheng/show/1015.html",
+    "https://www.51qiguang.com/archives/5775",
+    "https://www.zxtw168.com/p-63118.html"
+   ],
+   "股权 代持 风险": [
+    "https://www.miit.gov.cn/jgsj/qyj/myqyzxqyflwtbwbd/art/2020/art_095cac98121d4c9a9cc2ec5321c8291e.html",
+    "https://sfj.zibo.gov.cn/art/2025/2/20/art_18035_2894329.html",
+    "https://m.thepaper.cn/newsDetail_forward_32018553"
+   ],
+   "著作权 侵权 合理使用": [
+    "https://www.gov.cn/guoqing/2021-10/29/content_5647633.htm",
+    "https://www.spp.gov.cn/spp/llyj/202505/t20250513_695472.shtml",
+    "https://m.jiemian.com/article/1416477.html"
+   ],
+   "蒸谷米 营养价值 提高 原理 水热处理 维生素 糊化": [
+    "https://www.haas.cn/cgcyc/info/1201/11201.htm",
+    "https://cgm.haut.edu.cn/info/1043/5862.htm",
+    "https://www.huxiu.com/article/4887808.html"
+   ],
+   "行政处罚 听证 程序 时限": [
+    "https://www.mee.gov.cn/zcwj/zcjd/201605/t20160522_343412.shtml",
+    "https://www.gov.cn/zhengce/202403/content_6937800.htm",
+    "https://www.beijing.gov.cn/gongkai/zfxxgk/zc/gz/202201/t20220126_2600753.html"
+   ],
+   "西藏 高反 预防 攻略": [
+    "https://www.shannan.gov.cn/zjsn/snly/jzcs/202608/t20260827_175674.html",
+    "https://www.tttl.cn/gonglue/8887261154.html",
+    "https://www.tibetcn.com/wenda/244.html"
+   ],
+   "认知行为疗法 抑郁 练习": [
+    "https://baike.baidu.com/item/%E5%8D%81%E6%AD%A5%E9%A9%B1%E6%95%A3%E6%8A%91%E9%83%81%20%EF%BC%9A%E8%AE%A4%E7%9F%A5%E8%A1%8C%E4%B8%BA%E7%96%97%E6%B3%95/59859090",
+    "https://sencare.com.tw/cognitive-behavioral-therapy-techniques-for-overcoming-anxiety-and-depression",
+    "https://www.mayoclinic.org/zh-hans/tests-procedures/cognitive-behavioral-therapy/about/pac-20384610"
+   ],
+   "跨境电商 出口 报关 流程": [
+    "https://swt.fujian.gov.cn/xxgk/jgzn/jgcs/dzswhxxhc/gzdt_598/202302/t20230221_6113764.htm",
+    "https://www.eshutong.com/archives/3261.html",
+    "https://global.lianlianpay.com/article/MTU3MzcwLDBkMQ.html"
+   ],
+   "量子计算 纠错 量子比特": [
+    "https://www.cas.cn/kj/202412/t20241211_5042329.shtml",
+    "https://quantum.ustc.edu.cn/web/index.php/node/108",
+    "https://www.baqis.ac.cn/news/detail/?cid=2216"
+   ],
+   "食品添加剂 使用限量 GB 2760": [
+    "https://www.gov.cn/zhengce/zhengceku/202403/content_7001729.htm",
+    "https://vt.quark.cn/blm/quark-doc-ssr-293/preview?id=8BB788DE86DEE3C04F1E8D160D690D7F&doc_title=%E8%82%89%E5%88%B6%E5%93%81%E9%A3%9F%E5%93%81%E6%B7%BB%E5%8A%A0%E5%89%82%E6%9C%80%E5%A4%A7%E4%BD%BF%E7%94%A8%E9%87%8FGB2760-2025",
+    "https://baike.baidu.com/item/GB%202760/67357642"
+   ],
+   "首套房 贷款利率 计算": [
+    "https://baike.baidu.com/item/首套房贷利率/68777949",
+    "https://www.66law.cn/laws/664377.aspx",
+    "https://vt.quark.cn/blm/quark-doc-ssr-293/preview?id=68D3C909906F1B0DFE63D4055C04E037&q=%E9%A6%96%E5%A5%97%E6%88%BF+%E8%B4%B7%E6%AC%BE%E5%88%A9%E7%8E%87+%E8%AE%A1%E7%AE%97&doc_title=2023%E5%B9%B4%E9%A6%96%E5%A5%97%E6%88%BF%E8%B4%B7%E6%AC%BE%E5%88%A9%E7%8E%87"
+   ],
+   "马拉松 训练 计划 新手": [
+    "https://rundida.com/zh/guide/training",
+    "https://baike.baidu.com/item/极限长跑—超级马拉松训练指南/63406650",
+    "https://jingyan.baidu.com/article/ca00d56cf7af7ba89eebcfe5.html"
+   ],
+   "高考 志愿 填报 顺序": [
+    "https://www.gov.cn/zhengce/202406/content_6958143.htm",
+    "https://hr.edu.cn/xueshu/202307/t20230703_2450483.shtml",
+    "https://www.baiyinqu.gov.cn/XZJDBMDW/xzjd/qwxrmzf/fdzdgknr/zcjd/art/2024/art_b81e831760644191857f18130763dbcf.html"
+   ],
+   "高血压 降压药 联合用药": [
+    "https://mpa.xinjiang.gov.cn/xjyjj/yyaq/202205/13c5d0fce19542d79e4f8d2024c5b489.shtml",
+    "https://e.dxy.cn/wisdom/front/zhihuihao/3086",
+    "https://baike.baidu.com/item/高血压病联合用药策略/56616055"
+   ]
+  }
+ }
+}
