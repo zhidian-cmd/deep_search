@@ -194,6 +194,26 @@ class DeepSearchSkill:
                 ", ".join(demoted_low[:3]),
             )
 
+        # 诱饵桶沉底（V10.6）：CLI 已按整桶相干度打标（coherence.Judge，
+        # witness 门控防冷门 query 误杀）。只有命中引擎**全属**诱饵集的 URL
+        # 沉到抓取窗口尾部——与 low_value 同一哲学，只重排不丢弃，池子浅时
+        # 照样被抓；被任一干净引擎命中的 URL 不动（诱饵桶正需要干净源对冲）。
+        decoy_engines = {
+            s["engine"] for s in (search_data.get("engine_status") or [])
+            if s.get("decoy") and s.get("engine")
+        }
+        if decoy_engines:
+            result["metadata"]["decoy_engines"] = sorted(decoy_engines)
+            urls, demoted_decoy = self._demote_decoy_urls(
+                search_data.get("results") or [], decoy_engines, urls)
+            if demoted_decoy:
+                self.logger.info(
+                    "Demoted %d decoy-engine URL(s) to fetch-window tail "
+                    "(decoy engines: %s): %s",
+                    len(demoted_decoy), ", ".join(sorted(decoy_engines)),
+                    ", ".join(demoted_decoy[:3]),
+                )
+
         _lap("search")
 
         # 2/3. 全量抓取（固定条数 + 单档过滤）：抓满 fetch_url_count 条且在途全部
@@ -636,9 +656,10 @@ class DeepSearchSkill:
             query,
             limit=per_query,
         )
-        # 全量候选，不硬截断：低质淘汰由抓取层按 content_score 消化。
-        results = resp or []
-        return {"results": results}
+        # V10.6：search() 返回 (items, engine_status)——engine_status 含各引擎的
+        # coherence/decoy 桶级相干度判定（CLI 只打标，消费方决定怎么用）。
+        results, engine_status = resp
+        return {"results": results or [], "engine_status": engine_status or []}
 
 
     # ---------- 辅助方法 ----------
@@ -666,6 +687,32 @@ class DeepSearchSkill:
             if "url" in r:
                 urls.append(r["url"])
         return urls
+
+    @staticmethod
+    def _demote_decoy_urls(
+        results: List[Dict[str, Any]],
+        decoy_engines: Set[str],
+        urls: List[str],
+    ) -> Tuple[List[str], List[str]]:
+        """诱饵桶 URL 沉底（V10.6，只重排不丢弃）。
+
+        命中引擎**全部**落在 decoy_engines 的 URL 沉到队尾；被任一干净引擎
+        命中的 URL、engine 字段缺失的 URL 一律放行（fail-open）。保持两侧
+        各自原顺序，返回 `(keep + demoted, demoted)`。
+        """
+        eng_of: Dict[str, List] = {}
+        for r in results:
+            u = r.get("url")
+            if u:
+                eng_of[u] = [e for e in (r.get("engine") or []) if e]
+        keep, demoted = [], []
+        for u in urls:
+            engs = eng_of.get(u)
+            if engs and all(e in decoy_engines for e in engs):
+                demoted.append(u)
+            else:
+                keep.append(u)
+        return keep + demoted, demoted
 
     @staticmethod
     def _build_sources_meta(

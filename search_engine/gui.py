@@ -129,9 +129,13 @@ def run_search(keyword: str) -> None:
     if _ranked_search is None:
         print("搜索模块不可用（search.py 导入失败，见启动时的报错）")
         return
-    items = _ranked_search(keyword, limit=15)
+    items, engine_status = _ranked_search(keyword, limit=15)
     print(f"共 {len(items)} 条（按高价值排序；摘要 ≤{SNIPPET_CAP} 字）\n")
     print_engine_stats(items)
+    # V10.6：CLI 桶级相干度判定的诱饵桶（只打标不删，详见 Go 侧 internal/coherence）
+    decoy = [s["engine"] for s in (engine_status or []) if s.get("decoy")]
+    if decoy:
+        print(f"⚠ 诱饵桶（整桶疑似只匹配了 query 首词，其 URL 已沉底）: {', '.join(decoy)}\n")
     for i, it in enumerate(items, 1):
         title = " ".join(str(it.get("title") or "").split())
         snippet = " ".join(str(it.get("snippet") or "").split())[:SNIPPET_CAP]

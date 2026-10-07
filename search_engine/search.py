@@ -49,8 +49,12 @@ except Exception as _exc:  # pragma: no cover
     logger.error("ranking_meta 不可用（%s）—— 排序将退化为 CLI 原样顺序", _exc)
 
 
-def _cli_search(query: str, limit: int) -> list:
-    """调 CLI 聚合搜索，stdout 即纯 JSON（实测确认，无前后杂行）。零临时文件。"""
+def _cli_search(query: str, limit: int) -> tuple:
+    """调 CLI 聚合搜索，stdout 即纯 JSON（实测确认，无前后杂行）。零临时文件。
+
+    返回 (results, engine_status)：engine_status 是各引擎执行情况，V10.6 起含
+    coherence/decoy（桶级相干度判定，见 Go 侧 internal/coherence）。
+    """
     if CLI_PATH is None:
         raise RuntimeError(
             f"未找到搜索 CLI（找过 METASEARCH_CLI 环境变量，以及 {_BIN_DIR / CLI_NAME}）"
@@ -66,20 +70,24 @@ def _cli_search(query: str, limit: int) -> list:
     if r.returncode != 0:
         raise RuntimeError(f"metasearch_cli rc={r.returncode}: {r.stderr[:300]}")
     data = json.loads(r.stdout)
-    return data["results"] if isinstance(data, dict) else data
+    if isinstance(data, dict):
+        return data["results"] or [], data.get("engine_status") or []
+    return data or [], []
 
 
-def search(query: str, limit: int = 15) -> list:
+def search(query: str, limit: int = 15) -> tuple:
     """对外接口：CLI 多引擎聚合 → ranking_meta 统计排序。
 
     参数：
         query: 搜索词
         limit: 每引擎最大结果数（下游抓取层自行做预算控制）
     返回：
-        按 score 降序的条目列表（额外带 score 字段）。
+        (items, engine_status)：items 按 score 降序（额外带 score 字段）；
+        engine_status = 各引擎执行情况（ok/count/latency/error，V10.6 起含
+        coherence 相干度与 decoy 诱饵桶标记——CLI 只打标，消费方决定怎么用）。
     """
     t0 = time.monotonic()
-    items = _cli_search(query, limit)
+    items, engine_status = _cli_search(query, limit)
 
     # 排序：rank.py 自带 URL 合并 + 结构保证（广告/无效必沉底）
     if _meta_rank is not None and items:
@@ -90,4 +98,4 @@ def search(query: str, limit: int = 15) -> list:
 
     logger.warning("search(%r): %d 条, 耗时 %.2fs（CLI 聚合 + 排序）",
                    query, len(items), time.monotonic() - t0)
-    return items
+    return items, engine_status
