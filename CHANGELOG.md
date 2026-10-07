@@ -3,6 +3,13 @@
 > 本文件已精炼：每个版本只保留结论与关键数字，完整原文备份在 `temp/backup_md_20260925/CHANGELOG.md`。
 > 声明位随版本走，历史注记一律不动（V8.16 立的原则）。
 
+## V10.6（2026-10-07 排序 replay 门禁 + 诱饵桶消费端）
+
+- **C：replay 门禁转正**。`tests/_eval_dirty_v1.json`：34 条真实归档正文（4 题食品包装），含汤页/跑题/机翻/SEO 边缘样本，form/auth/cov/weak_core 由 filters 对归档正文现算、rel 人工标注——v3 是干净批测不出汤页收益上限，脏批补上。`tests/test_rank_replay.py`：快照锁（每题 top3 URL 序列）+ 聚合与逐题不回退 + 质量地板（top3 无跑题、top1≥0.5）+ 线性回退分支独立断言；`bless` 子命令显式重锁基线（改排序键必须连带说明）。基线：dirty top1_rel=0.875 / v3 top1_rel=0.9828，off_top5 全 0。
+- **B（Python 侧）**：`search_engine/search.py` 的 `search()` 返回 `(items, engine_status)`——CLI 的 engine_status 此前被整段丢弃；`skill._demote_decoy_urls`：命中引擎**全属** decoy 集的 URL 沉到抓取窗口尾部（只重排不丢弃，engine 缺失 fail-open，被任一干净引擎命中不动），decoy 引擎清单进 `metadata.decoy_engines`；`search_engine/gui.py` 贡献表上方提示诱饵桶。Go 侧判据（internal/coherence，witness 门控）见 metasearch_cli 仓库 `98ca60d`。
+- **A（部署）**：metasearch_cli 新增 tinyfish 第 8 引擎（`bb2f8f1`，中文直发质量优秀免翻译桥、12k 次/天免费）；部署 exe 至 `search_engine/bin/`；`apikey set tinyfish` 后实测 ✓ OK。端到端验证：9 引擎实弹，bing 桶 coherence=0.1 被正确打标 decoy=True（7 个 witness 桶），tinyfish 10 条入池参与共识。
+- ⚠️ MCP 宿主需重连生效（exe 已换新、Python 侧两处签名变更）。13 套测试全 PASS。
+
 ## V10.5（2026-10-07 来源质量五守卫：弱核心词闸 / 汤页规则 / 机翻打标 / 页内日期 / 数字冲突）
 
 - **动机**：食品包装 4 轮 60 来源用户评审（本轮真实检索）——夸克文档预览文本汤 0.98 入选、HALS 添加剂跑题报告进前五、烩面机厂商词条混进交付清单、机翻市场页数字自相矛盾（straitsresearch 同页"10 亿美元"与"11094.4 亿美元"并存）、SEO 软文凭形态分压过权威页。纯噪声占比约 25%。
