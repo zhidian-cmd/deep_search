@@ -340,7 +340,10 @@ class DeepSearchSkill:
         # 全部正文才能算文档频率。
         if self.config.authority_enabled:
             for d in main_fetched:
-                d["authority"] = filters.authority_score(d.get("url") or "")
+                # V10.6：URL 静态表之外叠加正文学术排版指纹（DOI/ISSN/收稿
+                # 日期/基金项目等），未收录的长尾学术站不再被百科压住。
+                d["authority"] = filters.authority_score_ex(
+                    d.get("url") or "", d.get("text") or "")
         if self.config.coverage_enabled:
             covs = filters.query_coverage(
                 [d.get("text") or "" for d in main_fetched], query)
@@ -354,6 +357,44 @@ class DeepSearchSkill:
             multiplicative=getattr(self.config, "rank_multiplicative", True),
         )
         _lap("rank")  # 标签是 rank：去重在其后才发生
+
+        # 3.55 零覆盖剔除闸（V10.6）：coverage=0 = query 全部词在全文零命中，
+        # 属最强跑题证据——弱核心闸只看「标题+前500字」，正文中部堆无关词的
+        # 页面拦不住，本闸看全文兜底。批内相对判据（低于中位数才剔）+ 数量
+        # 护栏（保底留 5 条、批内 ≥10 条才启用），判定异常整段跳过，延续
+        # fail-open：只做减法、绝不拦主链路。被剔条目记进元数据留痕可查。
+        if self.config.zero_cov_gate_enabled and len(items) >= 10:
+            try:
+                rs_sorted = sorted(float(d.get("rank_score") or 0.0) for d in items)
+                median_rs = rs_sorted[len(rs_sorted) // 2]
+                keep, evict = [], []
+                for d in items:
+                    if (float(d.get("coverage") or 0.0) == 0.0
+                            and float(d.get("rank_score") or 0.0) < median_rs):
+                        evict.append(d)
+                    else:
+                        keep.append(d)
+                while evict and len(keep) < 5:   # 数量护栏：保底放回最高分
+                    evict.sort(key=lambda d: float(d.get("rank_score") or 0.0),
+                               reverse=True)
+                    keep.append(evict.pop(0))
+                if evict:
+                    evict_ids = {id(d) for d in evict}
+                    items = sorted(keep, key=lambda d: d.get("rank_score", 0.0),
+                                   reverse=True)
+                    main_fetched = [d for d in main_fetched
+                                    if id(d) not in evict_ids]
+                    result["metadata"]["zero_cov_evicted"] = [
+                        {"url": d.get("url"), "rank_score": d.get("rank_score")}
+                        for d in evict
+                    ]
+                    self.logger.warning(
+                        "Zero-coverage gate evicted %d (cov=0, below median %.4f): %s",
+                        len(evict), median_rs,
+                        ", ".join((d.get("url") or "")[:70] for d in evict[:3]),
+                    )
+            except Exception as e:
+                self.logger.warning("zero_cov gate failed: %s", e)
 
         # 3.6 自适应降权学习：成功抓到的条目累积观察；同域一轮只采一次。
         # 失败/低质的负样本已在 web_fetch 层记录。
@@ -924,7 +965,11 @@ class DeepSearchSkill:
                 reuse_s = " · 本轮复用缓存" if p.get("reused") else ""
                 pdf_lines.append(f"- **{title}**")
                 pdf_lines.append(f"  - {size_s}{pages_s}{reuse_s} · 未纳入正文")
-                pdf_lines.append(f"  - 本地路径: `{p.get('path') or ''}`")
+                # V10.6：标题出处（metadata=PDF 元数据 / page=首页文本 / url=地址末段），
+                # url 兜底的标题最不可信，调用方据此决定是否引用。
+                ts = str(p.get("title_source") or "").strip()
+                ts_s = f" · 标题来自{ {'metadata': 'PDF元数据', 'page': '首页文本', 'url': '地址末段'}.get(ts, ts) }" if ts else ""
+                pdf_lines.append(f"  - 本地路径: `{p.get('path') or ''}`{ts_s}")
                 pdf_lines.append(f"  - 原始地址: {p.get('url') or ''}")
                 # 关键片段摘要（V10.3）：归档不吃响应额度，逐份给全。
                 digest = (p.get("digest") or "").strip()

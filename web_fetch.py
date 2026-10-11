@@ -90,15 +90,38 @@ _GENERIC_PDF_TITLES = frozenset({
     "untitled", "unknown", "pdf", "doc", "文档", "新建", "幻灯片", "课件",
 })
 
+# V10.6 排版/导出工程文件的残留后缀：PDF 元数据 title 常是导出那一刻的源文件名
+# （实测案例：期刊论文 PDF 的 title 是「23期食品广告.indd」——InDesign 排版
+# 工程名，对文档内容零信息量）。title 里带这些后缀一律判污染，走首页文本兜底。
+_EXPORT_SUFFIXES = (
+    ".indd", ".indt", ".psd", ".ai", ".cdr", ".tmp",
+    ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".wps",
+)
+
+# 短文件名（≤20 字符）里的导出/排版特征词：untitled/打印/导出/最终版/
+# 「N期+报|刊|广告」这类名字出自排版工作流，同样零信息量。长度门槛防误杀
+# 正常长书名。
+_EXPORT_NAME_PAT = re.compile(
+    r"untitled|未命名|print|打印|export|导出|final|最终|draft|草稿|副本|印刷"
+    r"|\d+\s*期\s*(?:报|刊|广告)|(?:报|刊|广告)纸?\s*\d*\s*期"
+)
+
 
 def _generic_pdf_title(t: str) -> bool:
-    """元数据标题是否"有名无实"：过短（<4 字符）、命中泛词表、或 Office 导出前缀。"""
+    """元数据标题是否"有名无实"：过短（<4 字符）、命中泛词表、Office 导出前缀，
+    或 V10.6 的排版工程残留名（.indd 类后缀 / 短名含导出特征词）。"""
     if not t or len(t) < 4:
         return True
     low = t.lower()
     if low in _GENERIC_PDF_TITLES:
         return True
-    return low.startswith(("microsoft word", "microsoft powerpoint", "microsoft excel"))
+    if low.startswith(("microsoft word", "microsoft powerpoint", "microsoft excel")):
+        return True
+    if low.endswith(_EXPORT_SUFFIXES):
+        return True
+    if len(t) <= 20 and _EXPORT_NAME_PAT.search(t):
+        return True
+    return False
 
 
 def _first_title_lines(text: str, cap: int = 120) -> str:
@@ -124,6 +147,43 @@ def _first_title_lines(text: str, cap: int = 120) -> str:
 def _is_pdf_payload(data: bytes) -> bool:
     """魔数判据（唯一可信）：content-type 常被站点写错，URL 后缀会被查询串带偏。"""
     return bool(data) and data[:1024].find(_PDF_MAGIC) >= 0
+
+
+# V10.6 小节标题行判据：数字编号（1.1 / 2.3.2.4）、中文序号（一、）、
+# 常见章节词（摘要/结论/参考文献…）。量词黑名单防「3 个方面」这类正文句
+# 误入；句读标点行直接排除。
+_TOC_LINE_PAT = re.compile(
+    r"^(?:\d+(?:\.\d+)+\s*[^\d\s.，。；]"
+    r"|[一二三四五六七八九十]+、\s*\S"
+    r"|[1-9]\s+[^个种类条名次份家款台套项章节年月日0-9\s.，。；]"
+    r"|摘要|abstract|引言|绪论|结论|小结|参考文献|附录|展望)",
+    re.I,
+)
+
+
+def _pdf_toc_lines(text: str, cap: int = 18) -> str:
+    """多页文本 → 小节标题行拼接（「1 引言 | 2 材料与方法 | …」）。
+
+    只认 ≤50 字、无句读标点的短行；命中判据的行去重后按出现序拼接。
+    给 PDF 摘要附目录的动机：滑窗片段只是局部，调用方靠目录一眼判断
+    这份 PDF 里有没有要的东西，决定要不要按 path 读原文。
+    """
+    out: List[str] = []
+    seen: set = set()
+    for line in (text or "").split("\n"):
+        s = " ".join(line.split())
+        if not (2 <= len(s) <= 50) or re.search(r"[。；，,;：:？！?!]", s):
+            continue
+        if not _TOC_LINE_PAT.match(s):
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+        if len(out) >= cap:
+            break
+    return " | ".join(out)
 
 
 def _skip_l2_reason(l0_status, l1_status, l1_error: str, url: str) -> str:
@@ -362,7 +422,7 @@ class ScraplingManager:
         （国内标准类 PDF 元数据标题经常为空，必须抽第一页兜底）。
         懒导入 pymupdf：绝大多数 query 遇不到 PDF，不白付 import 成本。
         """
-        title, pages, digest = "", 0, ""
+        title, pages, digest, title_source = "", 0, "", "metadata"
         import pymupdf              # 正式包名（`fitz` 别名已弃用告警）
         try:
             with pymupdf.open(stream=data, filetype="pdf") as doc:
@@ -372,6 +432,7 @@ class ScraplingManager:
                     title = raw
                 if not title and pages:
                     title = _first_title_lines(doc[0].get_text() or "")
+                    title_source = "page"
                 # 限额摘要：前 N 页文本一次性抽出，打分在 _pdf_digest 里做。
                 if self.config.pdf_digest_enabled and pages:
                     n = min(pages, max(1, self.config.pdf_digest_pages))
@@ -382,12 +443,20 @@ class ScraplingManager:
                         except Exception:
                             continue
                     digest = self._pdf_digest(" ".join(page_texts))
+                    # V10.6 小节目录：滑窗片段只是局部，附目录让调用方一眼
+                    # 判断这份 PDF 里有没有要的东西（不计入窗口预算，行短）。
+                    toc = _pdf_toc_lines("\n".join(page_texts))
+                    if toc:
+                        digest = (digest + f"\n【小节目录】{toc}") if digest \
+                            else f"【小节目录】{toc}"
         except Exception as e:
             self.logger.warning("PDF meta failed for %s: %s", url, e)
         if not title:
             # URL 末段兜底；端点式 URL 拿不到名字只能空着，页数/字节数仍给得出。
             title = unquote(urlparse(url).path.rsplit("/", 1)[-1] or "")
-        return {"title": title.strip(), "pages": pages, "digest": digest}
+            title_source = "url"
+        return {"title": title.strip(), "pages": pages, "digest": digest,
+                "title_source": title_source}
 
     # 摘要打分关键词（通用高价值段：摘要/结论/工艺/参数…；query 词运行时叠加）。
     _DIGEST_KW = (
@@ -398,11 +467,14 @@ class ScraplingManager:
     )
 
     def _pdf_digest(self, text: str) -> str:
-        """PDF 正文 → 限额摘要：开头 300 字（标题/摘要区）+ 打分最高的窗口片段。
+        """PDF 正文 → 限额摘要：开头 300 字（标题/摘要区）+ 分段选优的窗口片段。
 
-        打分 = 关键词命中（通用表 + 本轮 query 词）；无命中窗口时兜底取正文
-        开头。窗口 300 字、步长 60、额度 pdf_digest_max_per_pdf 字符——标准
-        原文 29 万字也就抽出 1200 字，防"一份 PDF 吃光响应"。
+        V10.6 均匀分段取代固定步长滑窗：把正文等分成 预算//窗口 数量的段，
+        每段内部以 60 字步进选打分最高的窗口。旧滑窗（步进 240、重叠 60）的
+        候选窗口在关键词密集区扎堆（实测同篇论文抽出的片段全挤在邻近段落），
+        且"全局排序 + 预算截断"常吃不满额度；等分选优后片段天然散布全文，
+        预算利用率同步提高。窗口打分 = 关键词命中（通用表 + 本轮 query 词）；
+        零命中段丢弃；全部零命中时兜底取正文开头。
         """
         cfg = self.config
         t = re.sub(r"\s+", " ", text or "").strip()
@@ -416,8 +488,13 @@ class ScraplingManager:
         head = t[:300]
         budget = max(cfg.pdf_digest_max_per_pdf - len(head) - 100, 200)
         win = max(cfg.pdf_digest_win, 100)
-        step = max(win // 5, 60)
-        spans = range(0, max(len(t) - win, 0) + 1, win - step) or [0]
+        n_seg = max(1, budget // win)
+        tail = max(len(t) - win, 0)
+        if tail <= 0:
+            spans = [0]
+        else:
+            seg_step = tail / n_seg
+            spans = [int(i * seg_step) for i in range(n_seg)]
 
         def _score(w: str) -> int:
             s = 0
@@ -427,18 +504,24 @@ class ScraplingManager:
                     s += 2 + min(c, 5)
             return s
 
-        scored = sorted(((_score(t[i:i + win]), i) for i in spans), key=lambda x: -x[0])
+        # 段内滑窗选优：每段代表全文一块区域，段内取关键词密度最高处；
+        # 段起点间互不重叠（旧滑窗的重叠步进是扎堆的根源），预算天然不超。
         picked: List[int] = []
-        used = 0
-        for s, i in scored:
-            if s <= 2:                      # 完全无关键词命中的窗口不要
+        seg_len = int(tail / n_seg) if tail > 0 else 0
+        for j, start in enumerate(spans):
+            seg_end = tail if j == len(spans) - 1 else min(start + seg_len, tail)
+            best_i, best_s = start, _score(t[start:start + win])
+            i = start + max(win // 5, 60)
+            while i <= seg_end:
+                sc = _score(t[i:i + win])
+                if sc > best_s:
+                    best_s, best_i = sc, i
+                i += max(win // 5, 60)
+            if best_s <= 2:                  # 段内完全无关键词命中：丢弃
                 continue
-            if used + win > budget:
-                break
-            picked.append(i)
-            used += win
-        if not picked:                      # 兜底：宁给开头也不给空
-            picked, used = [0], min(400, len(t))
+            picked.append(best_i)
+        if not picked:                       # 兜底：宁给开头也不给空
+            picked = [0]
         picked.sort()
         frag = "……".join(t[i:i + win] for i in picked)
         return f"【开头】{head}\n【关键片段】{frag}"
@@ -539,7 +622,8 @@ class ScraplingManager:
             key = entry["key"]
             prev = self._pdf_index.get(key) or {}
             self._pdf_index[key] = {
-                k: entry[k] for k in ("path", "bytes", "pages", "title", "digest")
+                k: entry[k] for k in ("path", "bytes", "pages", "title",
+                                      "digest", "title_source")
                 if k in entry
             }
             # 复用保留首次入库时间；新落盘写当前时间。

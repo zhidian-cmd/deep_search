@@ -366,6 +366,37 @@ def authority_score(url: str) -> float:
     return best[1] if best else AUTHORITY_DEFAULT
 
 
+# V10.6 学术出版物排版指纹：期刊自建站/集群平台大多不在静态表里（兜底 0.50，
+# 被百科压住——实测《现代食品科技》0.50 vs 百科 0.58）。这些字段只出现在
+# 学术出版物的排版里，营销页/博客/百科几乎不带，命中即强证据。
+# 刻意排除「参考文献」「关键词」这类弱词：技术博客也常有，加了反而把 UGC 抬高。
+_SCHOLAR_MARKS = (
+    re.compile(r"doi[\s:：]*10\.\d{3,}", re.I),          # DOI 号
+    re.compile(r"issn[\s:：]?\d{3,4}[-—]?\d{3,4}", re.I),  # ISSN 号
+    re.compile(r"收稿日期|修回日期|录用日期|出版日期"),
+    re.compile(r"基金项目|基金资助|国家自然科学基金"),
+    re.compile(r"中图分类号|文献标志码|文章编号"),
+    re.compile(r"通讯作者|作者简介"),
+)
+
+
+def authority_score_ex(url: str, text: str = "", cap: float = 0.75) -> float:
+    """URL 静态表 + 正文学术特征加分的权威度（V10.6）。
+
+    base = authority_score(url)；base 已 ≥ cap 的站无需加分；否则数正文里
+    学术排版指纹的命中种数，每种 +0.10、封顶 +0.20，结果再封顶 cap（0.75）。
+    效果：未收录的长尾学术站 0.50 → 0.60~0.70，翻身压过百科（0.50），
+    够不着真正的 gov/期刊数据库（0.85+）。text 为空时与 authority_score 等价。
+    """
+    base = authority_score(url)
+    if base >= cap or not text:
+        return base
+    hits = sum(1 for p in _SCHOLAR_MARKS if p.search(text))
+    if hits <= 0:
+        return base
+    return min(base + 0.10 * min(hits, 2), cap)
+
+
 # ========== query 词覆盖率（V10.4：连续信号，取代"3 字过闸"的单一判据） ==========
 
 _RE_COV_SPLIT = re.compile(r"[\s,，、;；]+")

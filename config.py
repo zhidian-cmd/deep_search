@@ -111,6 +111,11 @@ class DeepSearchConfig:
     # 依据，SEO 软文/文本汤/跑题报告凭形态分就能压过权威页）。False = 回退
     # V10.4 线性语义（上面三个权重只在线性分支生效）。
     rank_multiplicative: bool = True
+    # V10.6 零覆盖剔除闸：coverage=0（query 词全文零命中）且 rank_score 低于
+    # 批内中位数的条目移出交付清单。批内 ≥10 条才启用，保底留 5 条防误杀；
+    # 弱核心闸只看「标题+前500字」，本闸看全文兜底（实测 github README
+    # cov=0.00 经弱核心 ×0.45 降权后仍进前五交付）。
+    zero_cov_gate_enabled: bool = True
 
     # ---------- PDF 附件摘要内联（V10.3） ----------
     # 命中 PDF 落盘时在 server 端直接抽正文关键片段内联进响应。动机：原设计
@@ -120,7 +125,9 @@ class DeepSearchConfig:
     pdf_digest_enabled: bool = True
     pdf_digest_pages: int = 12            # 参与抽取的最大页数（页数再多边际递减）
     pdf_digest_win: int = 300             # 片段窗口长度（字符）
-    pdf_digest_max_per_pdf: int = 1200    # 单份 PDF 摘要额度（字符）
+    pdf_digest_max_per_pdf: int = 2400    # 单份 PDF 摘要额度（字符；V10.6 由 1200 上调——
+                                          # 实测 1 份 PDF 时旧额度只用到总限额 6000 的 1/8，
+                                          # 扣除开头 300 与保险 100 后仅够 2 个窗口）
     pdf_digest_max_total: int = 6000      # 单次响应全部 PDF 摘要总额度（字符）
 
     # ---------- PDF 落盘缓存（V10.3） ----------

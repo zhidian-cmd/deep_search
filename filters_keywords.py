@@ -511,6 +511,9 @@ AUTHORITY_TIERS = {
     "cnki.net": 0.88, "wanfangdata.com.cn": 0.88, "cqvip.com": 0.85,
     "ssrn.com": 0.85, "semanticscholar.org": 0.85, "doi.org": 0.90,
     "openreview.net": 0.85, "researchgate.net": 0.80, "paperswithcode.com": 0.75,
+    # V10.6 补录中文期刊自建站/集群平台（长尾学术站原先兜底 0.50 被百科压住）：
+    # ijournals.cn = 《现代食品科技》等期刊集群；mpmpc.cn = 粮油类学术期刊。
+    "ijournals.cn": 0.82, "mpmpc.cn": 0.70,
     # ---- 标准与法规平台 ----
     "gb688.cn": 0.95, "ndls.org.cn": 0.95, "cssn.cn": 0.90,
     "pkulaw.com": 0.85, "lawinfochina.com": 0.85, "chinacourt.org": 0.80,
@@ -541,8 +544,9 @@ AUTHORITY_TIERS = {
     "tensorflow.org": 0.70, "stackoverflow.com": 0.68, "dxy.cn": 0.68,
     "msdmanuals.com": 0.70, "msdmanuals.cn": 0.70, "antpedia.com": 0.62,
     "w3.org": 0.80, "rfc-editor.org": 0.80, "mozilla.org": 0.65,
-    # ---- 百科 ----
-    "baike.baidu.com": 0.58, "baike.baidu.hk": 0.58, "yixue.com": 0.58,
+    # ---- 百科（V10.6：中文百科 UGC 无编审比例高，从 0.58 降档到 0.50，
+    #      与兜底值持平——未收录的长尾学术站借正文特征加分后可翻身压过它）----
+    "baike.baidu.com": 0.50, "baike.baidu.hk": 0.50, "yixue.com": 0.55,
     "newton.com.tw": 0.55, "baike.com": 0.50, "sogou.com": 0.50,
     "wikipedia.org": 0.60, "zhihu.com": 0.55, "mbalib.com": 0.52,
     # ---- 垂直内容 / 健康门户 / 书籍转载 / 评测参数站 ----
