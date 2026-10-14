@@ -3,6 +3,16 @@
 > 本文件已精炼：每个版本只保留结论与关键数字，完整原文备份在 `temp/backup_md_20260925/CHANGELOG.md`。
 > 声明位随版本走，历史注记一律不动（V8.16 立的原则）。
 
+## V10.7（2026-10-14 相关性闸词级救援 + 抓取配额经济性三闸）
+
+- **动机**：果蔬 6 题实测诊断四问题全部实锤（temp/logs 2026-10-14）。①相关性闸误杀：混合 query（2 字核心词 + 1 个 ≥3 字词，如「果蔬 采后 病害 侵染 生理 防御 酶活性」）下，片段闸只认 ≥3 字连续片段——只共享 2 字核心词的高相关页被整批移出，14:58 轮误杀 11 篇学术文献（中科院/农业工程学报/食品工业科技 DOI 页），Q3c 交付只剩 3 条。②文库站烧配额：wenku/docin/book118/renrendoc 等在 URL_BLACKLIST 里但该表只在**抓取后** content_score 生效，先抓再判——跨轮 100+ 次尝试几乎全 0 分（每次 4~10s，penalty_stats 实测）。③403/超时源反复尝试：toutiao 系 44 次尝试 lat_avg 23~24s，学习层已判 -0.4 但 current_delta 唯一消费点是抓后打分，候选选择不读它（"Per-URL timeout" 全史 84 次）。④Q3c 交付偏少 = ①的连锁。
+- **相关性闸双信号**（`filters.query_term_hits()`，V10.7 核心）：query 按 `_RE_COV_SPLIT` 拆词（≥2 字含字母、纯数字词排除），中文子串/英文词边界匹配「标题+正文」，返回命中词数。与片段闸 OR 组合：任一判"相关"即放行、两信号都判"跑题"才移出——**词级信号只做救援、永不新增移出**（移出权仍在片段闸；单词 query / 纯 2 字词 query / 语言不对等维持 fail-open，行为与 V10.6 完全一致）。`config.relevance_guard_min_term_hits=2`（0=回退纯片段闸）。旧固态电池测评样本判定零回退（同词异义页仍拦），果蔬被误杀的三类页面（ov=2、hits=3~4）全部放行。
+- **黑名单域名沉底**（`filters.partition_blacklisted()`）：URL_BLACKLIST 命中页（wenku/搜索结果壳等）在抓取前稳定沉到窗口尾部，只重排不丢弃——池深不花名额、池浅照样抓（与 low_value/诱饵桶同哲学，降权不拉黑）。
+- **学习层负样本候选沉底**（`filters.partition_learned_negative()`）：`current_delta` ≤ `config.learned_negative_max_delta`（-0.4，对齐 _judge 的"抓不到/-0.5、低质/-0.4"档）的 host 沉尾，把配额让给真源。白名单豁免（与 _domain_weight 语义一致）、只读不写统计、学习层故障 fail-open、-0.3 慢站不沉（慢不等于差）。
+- **同批失败 host 跳过**（`web_fetch._fetch_direct`）：本批内超时/空结果 host 不再派发同域后续 URL，且跳过**不占尝试名额**——队列向后补位，池深时真源前移。仅限本批（failed_hosts 每批重建），host 首条 URL 已给过机会；低分成功不记（那是黑名单/降权的管辖，不归可达性）。
+- 接线：`skill` 候选分区插两步（low_value → 黑名单 → 学习层 → 诱饵桶，稳定分区层级沉底）、3.4.6 闸改双信号；`metadata` 透出 `blacklist_demoted` / `learned_negative_demoted`。预期：混合 query 不再整批误杀（Q3c 型交付恢复）、29 个抓取名额不再烧在注定 0 分/熔断的源上。
+- 全量离线回归 15 套 PASS（新增 `tests/test_v107_fetch_economy.py` 21 项断言；`tests/test_relevance_guard.py` 重写为双信号口径 22 项断言，含果蔬误杀回归样本）。⚠️ MCP 宿主需重连生效。已知边界：词级信号对泛词 query（命中 2 个通用词的擦边页）判别力弱——由 zero-cov 闸 / weak_core ×0.45 / 三维排序兜底；同批跳过对"同 host 部分路径被反爬、其余正常"的站可能少抓 1~2 条（首条已给机会，跨轮学习层仍可翻案）。
+
 ## V10.6（2026-10-07 排序 replay 门禁 + 诱饵桶消费端）
 
 - **C：replay 门禁转正**。`tests/_eval_dirty_v1.json`：34 条真实归档正文（4 题食品包装），含汤页/跑题/机翻/SEO 边缘样本，form/auth/cov/weak_core 由 filters 对归档正文现算、rel 人工标注——v3 是干净批测不出汤页收益上限，脏批补上。`tests/test_rank_replay.py`：快照锁（每题 top3 URL 序列）+ 聚合与逐题不回退 + 质量地板（top3 无跑题、top1≥0.5）+ 线性回退分支独立断言；`bless` 子命令显式重锁基线（改排序键必须连带说明）。基线：dirty top1_rel=0.875 / v3 top1_rel=0.9828，off_top5 全 0。

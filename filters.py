@@ -171,6 +171,55 @@ def partition_low_value(urls: List[str]) -> Tuple[List[str], List[str]]:
     return normal + demoted, demoted
 
 
+def partition_blacklisted(urls: List[str]) -> Tuple[List[str], List[str]]:
+    """黑名单域名稳定沉底（V10.7）：URL_BLACKLIST 命中页沉到抓取窗口尾部。
+
+    动机：wenku/docin/book118/renrendoc 等文档站与搜索结果壳在 content_score
+    里注定 0 分（url_blacklisted 硬否决），但该表此前只在**抓取后**生效——
+    先抓再判纯属烧名额（penalty_stats 实测 wenku 系跨轮 100+ 次尝试几乎全
+    0 分，每次 4~10s）。抓取前沉底，只重排不丢弃：池子比抓取窗口深时一个
+    名额都不花，池子浅时照样抓 —— 与 partition_low_value / 诱饵桶沉底同一
+    「降权不拉黑」哲学（真垃圾也是真实候选，浅池宁可低产不静默丢源）。
+    """
+    normal: List[str] = []
+    demoted: List[str] = []
+    for u in urls:
+        (demoted if u and url_blacklisted(u) else normal).append(u)
+    return normal + demoted, demoted
+
+
+def partition_learned_negative(
+    urls: List[str], max_delta: float = -0.4
+) -> Tuple[List[str], List[str]]:
+    """学习层负样本 host 稳定沉底（V10.7）：delta ≤ max_delta 的域名沉尾。
+
+    filters_learn 早有「抓不到/低质/慢站记负样本、30 天衰减」机制，但
+    current_delta 此前唯一消费点是 _domain_weight → content_score（抓后打分，
+    最多影响 0.1 分）——toutiao 等已知反爬站每轮照烧 24~35s 单条熔断
+    （stats 实测 44 次尝试）。本函数把学习信号**提前到候选选择**消费：
+    池子深时不花名额，池子浅时照样抓（降权不拉黑）。
+
+    只读不写：current_delta 是只读查询，不累积观察。白名单（gov.cn 等）
+    豁免 —— 与 _domain_weight 的「白名单忽略动态层」语义一致，用户手动
+    纠偏的出口不被自动统计覆盖。max_delta 对齐 _judge 档位：-0.5（抓不到）
+    与 -0.4（低质）沉底；-0.3（慢站）不沉 —— 慢不等于差，沉了可能误杀
+    慢而精的源。
+    """
+    normal: List[str] = []
+    demoted: List[str] = []
+    for u in urls:
+        host = helpers.host_of(u)
+        sink = False
+        if host and not any(host == h or host.endswith("." + h)
+                            for h in WHITELIST_HOSTS):
+            try:
+                sink = filters_learn.current_delta(host) <= max_delta
+            except Exception:
+                sink = False  # 学习层故障不影响候选主流程
+        (demoted if sink else normal).append(u)
+    return normal + demoted, demoted
+
+
 def is_garbled(text: str) -> bool:
     """乱码 / WAF 页判定：正则特征 + 非打印比例 + 中文占比兜底。"""
     t = text or ""
@@ -651,6 +700,59 @@ def query_overlap(text: str, query: str, title: str = "") -> Optional[int]:
         if cjk_ratio < _LANG_MISMATCH_CJK_RATIO:
             return None
     return best
+
+
+def query_term_hits(text: str, query: str, title: str = "") -> Optional[int]:
+    """query 拆词后，在「标题 + 正文」里命中的**词数** 0~len(terms)。
+
+    V10.7 词级救援信号，与 query_overlap（片段信号）OR 组合消费：任一判
+    "相关"即放行。动机：混合 query（2 字核心词 + 1 个 ≥3 字词，如
+    "果蔬 采后 病害 侵染 生理 防御 酶活性"）下，片段闸只认 ≥3 字连续片段
+    ——只共享 2 字核心词的高相关页被整批误杀（2026-10-14 果蔬 3 轮实测：
+    中科院/农业工程学报/食品工业科技 DOI 等 11 篇被移出，交付只剩 3 条）。
+    词级口径直接命中这类页的形态：命中 ≥2 个 query 词即判相关。
+
+    返回 None = **无法判定**（query 拆不出 ≥2 个有效词 / 中文 query 撞上
+    几乎无中文的页面且 query 无英文词）—— 调用方按 fail-open 只看片段
+    信号。刻意只做**救援**不做移出：移出权仍在片段闸手里（2 字词重叠
+    误杀过，没资格反过来当死判据）。
+
+    拆词口径与 query_coverage 一致（_RE_COV_SPLIT）；中文词子串匹配、
+    英文词词边界匹配（与 query_overlap 同规则）；纯数字词（"2026"）无
+    主题判别力，不参与。
+    """
+    q = (query or "").strip()
+    if not q:
+        return None
+    terms = []
+    for t in _RE_COV_SPLIT.split(q):
+        t = t.strip().lower()
+        if len(t) >= _COV_TERM_MIN_LEN and _RE_HAS_LETTER.search(t):
+            terms.append(t)
+    if len(terms) < 2:
+        return None  # 单词 query 无"≥2 词"可言，信号不成立
+    t_body = (text or "").strip()
+    if t_body:
+        t_body = strip_source_header(t_body)
+    hay = f"{title or ''}\n{t_body}".lower()
+    if not hay.strip():
+        return 0
+    cjk_terms = [t for t in terms if _RE_CJK.search(t)]
+    en_terms = [t for t in terms if not _RE_CJK.search(t)]
+    if cjk_terms and not en_terms:
+        # 与 query_overlap 同一条豁免：中文 query × 几乎不含中文的页没法比。
+        # query 带英文词时不豁免——英文词边界匹配对任何语言都有效。
+        cjk_ratio = len(_RE_CJK.findall(hay)) / max(len(hay), 1)
+        if cjk_ratio < _LANG_MISMATCH_CJK_RATIO:
+            return None
+    hits = 0
+    for t in terms:
+        if _RE_CJK.search(t):
+            if t in hay:
+                hits += 1
+        elif re.search(rf"\b{re.escape(t)}\b", hay):
+            hits += 1
+    return hits
 
 
 # ========== 弱核心词前窗闸（V10.5，见 filters_keywords.WEAK_CORE_FACTOR） ==========

@@ -684,6 +684,12 @@ class ScraplingManager:
         host_cache: Dict[str, bool] = {}
         # L0 连接层死域缓存 + 学习观察去重（同域一轮只计一次，与 skill 层一致）。
         learned_hosts: set = set()
+        # 本批硬失败 host（超时/空结果）：同批内不再派发同域后续 URL（V10.7）。
+        # 跨轮由学习层负样本 + skill 候选沉底接管，这里只管"同一批内一个 host
+        # 已经烧穿一次熔断，第 2 条大概率同样结局"。只记硬失败，低分成功不记
+        # （那是质量问题，归黑名单/降权管，不归可达性管）。
+        failed_hosts: set = set()
+        skipped_same_host: List[str] = []
 
         def _learn(url: str, **obs) -> None:
             host = helpers.host_of(url)
@@ -694,6 +700,11 @@ class ScraplingManager:
                 filters_learn.penalty_delta(url, **obs)
             except Exception as e:
                 self.logger.warning("penalty_delta failed for %s: %s", host, e)
+
+        def _mark_failed(url: str) -> None:
+            host = helpers.host_of(url)
+            if host:
+                failed_hosts.add(host)
 
         async def _worker(url: str) -> Optional[Dict]:
             t0 = time.time()
@@ -707,6 +718,7 @@ class ScraplingManager:
                     "Per-URL timeout (%.0fs), dropped alone: %s",
                     self.config.fetch_timeout_per_url, url,
                 )
+                _mark_failed(url)
                 _learn(url, fetch_ok=False, latency=time.time() - t0)
                 return None
             if chain is _PDF_DONE:
@@ -715,11 +727,13 @@ class ScraplingManager:
                 self.logger.info("PDF branch done (dumped), not in text pool: %s", url)
                 return None
             if not chain:
+                _mark_failed(url)
                 _learn(url, fetch_ok=False, latency=time.time() - t0)
                 return None
             text, page_title = chain
             latency = time.time() - t0
             if not text:
+                _mark_failed(url)
                 _learn(url, fetch_ok=False, latency=latency)
                 return None
             score = filters.content_score(text, url)
@@ -738,6 +752,14 @@ class ScraplingManager:
             if not queue or scanned >= fetch_count:
                 return False
             url = queue.popleft()
+            host = helpers.host_of(url)
+            if host and host in failed_hosts:
+                # 同批已知硬失败 host（超时/空结果）：跳过且**不占尝试名额**——
+                # 队列继续向后补位，池深时真源前移、池浅时少一次注定烧穿的
+                # 熔断。跳过仅限本批（failed_hosts 每批重建），host 首条 URL 已
+                # 给过机会（这里一票否决的是"同批再试"，不是整个 host）。
+                skipped_same_host.append(url)
+                return True
             scanned += 1
             t = asyncio.ensure_future(_worker(url))
             inflight[t] = url
@@ -812,8 +834,10 @@ class ScraplingManager:
         collected.sort(key=lambda d: d["score"], reverse=True)
         if scanned:
             self.logger.info(
-                "Fetch done: scanned=%d collected=%d (fetch_count=%d)",
+                "Fetch done: scanned=%d collected=%d (fetch_count=%d)%s",
                 scanned, len(collected), fetch_count,
+                f", same-batch failed-host skipped={len(skipped_same_host)}"
+                if skipped_same_host else "",
             )
         return collected
 

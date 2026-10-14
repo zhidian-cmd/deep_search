@@ -194,6 +194,35 @@ class DeepSearchSkill:
                 ", ".join(demoted_low[:3]),
             )
 
+        # 黑名单域名沉底（V10.7）：wenku/搜索结果壳等 URL_BLACKLIST 命中页在
+        # content_score 里注定 0 分，该表此前只在抓取后生效——先抓再判纯属
+        # 烧名额（wenku 系跨轮实测 100+ 次尝试几乎全 0 分，每次 4~10s）。
+        # 抓取前稳定沉底，只重排不丢弃：池子深时一个名额都不花，池子浅时
+        # 照样抓（与 low_value / 诱饵桶同哲学，降权不拉黑）。
+        urls, demoted_bl = filters.partition_blacklisted(urls)
+        if demoted_bl:
+            result["metadata"]["blacklist_demoted"] = len(demoted_bl)
+            self.logger.info(
+                "Demoted %d blacklisted URL(s) to fetch-window tail: %s",
+                len(demoted_bl),
+                ", ".join(demoted_bl[:3]),
+            )
+
+        # 学习层负样本沉底（V10.7）：filters_learn 的"抓不到/低质"负样本
+        # （delta ≤ -0.5/-0.4，30 天衰减、白名单豁免）此前只在抓后打分生效
+        # —— toutiao 等已知反爬站每轮照烧 24~35s 单条熔断（stats 实测 44 次
+        # 尝试）。抓取前把已判负样本的 host 沉底，把名额让给真源：池子深时
+        # 不花名额，池子浅时照样抓（降权不拉黑，-0.3 慢站不沉）。
+        urls, demoted_learned = filters.partition_learned_negative(
+            urls, max_delta=self.config.learned_negative_max_delta)
+        if demoted_learned:
+            result["metadata"]["learned_negative_demoted"] = len(demoted_learned)
+            self.logger.info(
+                "Demoted %d learned-negative URL(s) to fetch-window tail: %s",
+                len(demoted_learned),
+                ", ".join(demoted_learned[:3]),
+            )
+
         # 诱饵桶沉底（V10.6）：CLI 已按整桶相干度打标（coherence.Judge，
         # witness 门控防冷门 query 误杀）。只有命中引擎**全属**诱饵集的 URL
         # 沉到抓取窗口尾部——与 low_value 同一哲学，只重排不丢弃，池子浅时
@@ -291,8 +320,15 @@ class DeepSearchSkill:
                     kept_fetched.append(d)
             main_fetched = kept_fetched
 
-        # 3.4.6 query 相关性闸：content_score 判"像不像正文"，本闸判"讲不讲这件事"
-        # （最长连续公共片段 < 门槛即移出主链路，判据见 filters.query_overlap）。
+        # 3.4.6 query 相关性闸：content_score 判"像不像正文"，本闸判"讲不讲这件事"。
+        # V10.7 双信号：片段信号（最长连续公共片段，filters.query_overlap）+
+        # 词级信号（query 拆词在标题+正文的命中词数，filters.query_term_hits）。
+        # 词级是**救援**信号：混合 query（2 字核心词 + 1 个 ≥3 字词）下，只共享
+        # 2 字核心词的高相关页曾被片段闸整批误杀（2026-10-14 果蔬 3 轮实测：
+        # 中科院/农业工程学报/食品工业科技 DOI 等 11 篇被移出、Q3c 交付只剩
+        # 3 条）。组合语义：任一信号判"相关"即放行，两信号都判"跑题"才移出；
+        # 任一信号无法判定（None）按 fail-open 只看另一信号——词级信号永不
+        # 新增移出，移出权仍在片段闸手里。
         if self.config.relevance_guard_enabled and main_fetched:
             kept_relevant: List[Dict] = []
             for d in main_fetched:
@@ -300,15 +336,25 @@ class DeepSearchSkill:
                     ov = filters.query_overlap(
                         d.get("text") or "", query, d.get("page_title") or "",
                     )
+                    hits = None
+                    if self.config.relevance_guard_min_term_hits > 0:
+                        hits = filters.query_term_hits(
+                            d.get("text") or "", query, d.get("page_title") or "",
+                        )
                 except Exception as e:
                     # 判定失败一律放行：这只是道减法闸，不该让整条链路因此丢内容
                     self.logger.warning("Relevance guard failed for %s: %s", d.get("url"), e)
                     kept_relevant.append(d)
                     continue
-                if ov is not None and ov < self.config.relevance_guard_min_overlap:
+                frag_ok = ov is None or ov >= self.config.relevance_guard_min_overlap
+                terms_ok = (hits is None
+                            or hits >= self.config.relevance_guard_min_term_hits)
+                if not frag_ok and not terms_ok:
                     self.logger.warning(
-                        "Off-topic removed (shared %d chars with query): %s | page_title=%r",
-                        ov, d.get("url"), (d.get("page_title") or "")[:60],
+                        "Off-topic removed (frag=%s/%s, terms=%s/%s): %s | page_title=%r",
+                        ov, self.config.relevance_guard_min_overlap,
+                        hits, self.config.relevance_guard_min_term_hits,
+                        d.get("url"), (d.get("page_title") or "")[:60],
                     )
                     continue
                 kept_relevant.append(d)
