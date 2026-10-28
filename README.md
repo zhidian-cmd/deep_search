@@ -1,4 +1,4 @@
-# Deep Search MCP Server V10.2
+# Deep Search MCP Server V10.7
 
 **简体中文** | [English](README_EN.md)
 
